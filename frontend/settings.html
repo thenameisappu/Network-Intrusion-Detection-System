@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">System Settings <div class="page-subtitle">Configuration</div></div>
+    </header>
+    <div class="page-container">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('system')">System</button>
+        <button class="tab-btn" onclick="switchTab('password')">Change Password</button>
+        <button class="tab-btn" onclick="switchTab('stats')">System Stats</button>
+      </div>
+
+      <!-- System settings tab -->
+      <div id="tab-system" class="tab-panel active">
+        <div class="card" style="max-width:600px">
+          <div class="card-header"><h3 class="card-title">System Configuration</h3></div>
+          <div id="settings-form">
+            <div class="form-group">
+              <label class="form-label">System Name</label>
+              <input class="form-input" id="s-name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Alert Threshold Confidence (0-1)</label>
+              <input class="form-input" id="s-threshold" type="number" step="0.05" min="0" max="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Batch Size</label>
+              <input class="form-input" id="s-batch" type="number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Data Retention (days)</label>
+              <input class="form-input" id="s-retention" type="number">
+            </div>
+            <div id="settings-result" class="hidden" style="margin-bottom:12px"></div>
+            <button id="save-settings-btn" class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Password tab -->
+      <div id="tab-password" class="tab-panel">
+        <div class="card" style="max-width:440px">
+          <div class="card-header"><h3 class="card-title">Change Password</h3></div>
+          <div class="form-group">
+            <label class="form-label">Current Password</label>
+            <input class="form-input" id="old-password" type="password" placeholder="Current password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password</label>
+            <input class="form-input" id="new-password" type="password" placeholder="New password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <input class="form-input" id="confirm-password" type="password" placeholder="Confirm new password">
+          </div>
+          <div id="pw-result" class="hidden" style="margin-bottom:12px"></div>
+          <button id="change-pw-btn" class="btn btn-primary" onclick="changePassword()">Change Password</button>
+        </div>
+      </div>
+
+      <!-- System Stats tab -->
+      <div id="tab-stats" class="tab-panel">
+        <div id="system-stats-content">
+          <div class="skeleton" style="height:200px;border-radius:12px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  if (auth.isAdmin()) loadSettings();
+  loadSystemStats();
+}
+
+async function loadSettings() {
+  const resp = await api.admin.settings();
+  if (!resp.success) return;
+  const s = resp.data;
+  document.getElementById('s-name').value = s.system_name || '';
+  document.getElementById('s-threshold').value = s.alert_threshold_confidence || 0.7;
+  document.getElementById('s-batch').value = s.max_batch_size || 10000;
+  document.getElementById('s-retention').value = s.retention_days || 90;
+}
+
+async function saveSettings() {
+  if (!auth.isAdmin()) { toast.error('Access denied', 'Admin only.'); return; }
+  const data = {
+    system_name: document.getElementById('s-name').value,
+    alert_threshold_confidence: parseFloat(document.getElementById('s-threshold').value),
+    max_batch_size: parseInt(document.getElementById('s-batch').value),
+    retention_days: parseInt(document.getElementById('s-retention').value),
+  };
+  setLoading('save-settings-btn', true);
+  const resp = await api.admin.updateSettings(data);
+  setLoading('save-settings-btn', false);
+  const el = document.getElementById('settings-result');
+  el.classList.remove('hidden');
+  if (resp.success) {
+    el.className = 'alert-banner success';
+    el.textContent = 'Settings saved successfully.';
+    toast.success('Settings saved');
+  } else {
+    el.className = 'alert-banner error';
+    el.textContent = resp.message || 'Failed.';
+  }
+}
+
+async function changePassword() {
+  const old = document.getElementById('old-password').value;
+  const nw = document.getElementById('new-password').value;
+  const conf = document.getElementById('confirm-password').value;
+  const el = document.getElementById('pw-result');
+  el.classList.remove('hidden');
+  if (nw !== conf) { el.className = 'alert-banner error'; el.textContent = 'Passwords do not match.'; return; }
+  if (nw.length < 8) { el.className = 'alert-banner error'; el.textContent = 'Password must be at least 8 characters.'; return; }
+  setLoading('change-pw-btn', true);
+  const resp = await api.auth.changePassword({ current_password: old, new_password: nw });
+  setLoading('change-pw-btn', false);
+  if (resp.success) {
+    el.className = 'alert-banner success'; el.textContent = 'Password changed.';
+    ['old-password','new-password','confirm-password'].forEach(id => document.getElementById(id).value = '');
+    toast.success('Password changed');
+  } else {
+    el.className = 'alert-banner error'; el.textContent = resp.message || 'Failed.';
+  }
+}
+
+async function loadSystemStats() {
+  if (!auth.isAdmin()) {
+    document.getElementById('system-stats-content').innerHTML = '<div class="alert-banner warning">Admin access required to view system stats.</div>';
+    return;
+  }
+  const resp = await api.admin.systemStats();
+  if (!resp.success) return;
+  const s = resp.data;
+  document.getElementById('system-stats-content').innerHTML = `
+    <div class="stat-grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+      <div class="stat-card teal"><div class="stat-label">Users</div><div class="stat-value">${fmt.number(s.users)}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Datasets</div><div class="stat-value">${fmt.number(s.datasets)}</div></div>
+      <div class="stat-card purple"><div class="stat-label">Models</div><div class="stat-value">${fmt.number(s.models)}</div></div>
+      <div class="stat-card red"><div class="stat-label">Detections</div><div class="stat-value">${fmt.number(s.detections)}</div></div>
+      <div class="stat-card orange"><div class="stat-label">Active Alerts</div><div class="stat-value">${fmt.number(s.alerts)}</div></div>
+    </div>
+  `;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+init();
+</script>
+</body>
+</html>

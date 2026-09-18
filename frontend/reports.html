@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Reports <div class="page-subtitle">Generate & Export</div></div>
+    </header>
+    <div class="page-container">
+      <div class="grid-2">
+        <!-- Report preview -->
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Report Preview</h3>
+            <button class="btn btn-secondary btn-sm" onclick="loadPreview()">Refresh</button>
+          </div>
+          <div id="report-preview"><div class="skeleton" style="height:300px;border-radius:8px"></div></div>
+        </div>
+
+        <!-- Export -->
+        <div>
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">Export Report</h3></div>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">
+              Download a comprehensive security report with detection statistics, attack distribution, and incident log.
+            </p>
+            <div style="display:grid;gap:12px">
+              <button class="btn btn-primary btn-full" onclick="api.downloadReport('pdf')">
+                📄 Download PDF Report
+              </button>
+              <button class="btn btn-secondary btn-full" onclick="api.downloadReport('csv')">
+                📊 Download CSV Report
+              </button>
+              <button class="btn btn-secondary btn-full" onclick="api.downloadReport('json')">
+                📋 Download JSON Report
+              </button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header"><h3 class="card-title">Report Contents</h3></div>
+            <ul style="color:var(--text-secondary);font-size:13px;line-height:2;list-style:none;padding:0">
+              <li>✓ Report generation timestamp</li>
+              <li>✓ Total traffic records</li>
+              <li>✓ Total intrusions detected</li>
+              <li>✓ Detection rate percentage</li>
+              <li>✓ Attack category breakdown</li>
+              <li>✓ Severity distribution</li>
+              <li>✓ Active model information</li>
+              <li>✓ Alert summary by severity</li>
+              <li>✓ Recent incident log</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadPreview();
+}
+
+async function loadPreview() {
+  const resp = await api.reports.preview();
+  const el = document.getElementById('report-preview');
+  if (!resp.success) { el.innerHTML = '<div class="alert-banner error">Failed to load report data.</div>'; return; }
+  const d = resp.data;
+  el.innerHTML = `
+    <div style="display:grid;gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="metric-box"><div class="metric-val">${fmt.number(d.total_traffic)}</div><div class="metric-lbl">Total Traffic</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:var(--severity-critical)">${fmt.number(d.total_intrusions)}</div><div class="metric-lbl">Intrusions</div></div>
+        <div class="metric-box"><div class="metric-val" style="color:var(--accent-green)">${fmt.number(d.normal_traffic)}</div><div class="metric-lbl">Normal</div></div>
+        <div class="metric-box"><div class="metric-val">${d.detection_rate || 0}%</div><div class="metric-lbl">Detection Rate</div></div>
+      </div>
+      <div style="background:var(--bg-secondary);border-radius:10px;padding:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Active Model</div>
+        <div style="font-size:14px;font-weight:700">${escHtml(d.active_model?.version || 'None')}</div>
+        <div style="font-size:12px;color:var(--text-secondary)">${escHtml(d.active_model?.model_type || '—')} | Accuracy: ${d.active_model?.accuracy ? fmt.percent(d.active_model.accuracy) : '—'}</div>
+      </div>
+      <div style="background:var(--bg-secondary);border-radius:10px;padding:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">Attack Breakdown</div>
+        ${Object.entries(d.attack_categories || {}).map(([k,v]) =>
+          `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px"><span>${escHtml(k)}</span><span class="badge badge-critical">${v}</span></div>`
+        ).join('') || '<div style="color:var(--text-muted);font-size:13px">No attacks recorded.</div>'}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);text-align:right">Generated: ${fmt.datetime(d.generated_at)}</div>
+    </div>
+  `;
+}
+
+init();
+</script>
+</body>
+</html>

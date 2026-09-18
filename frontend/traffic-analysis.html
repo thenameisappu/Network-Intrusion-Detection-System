@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traffic Analysis — NIDS</title>
+  <meta name="description" content="Single traffic flow analysis and intrusion detection using AI/ML models.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        Traffic Analysis
+        <div class="page-subtitle">Single Flow Prediction</div>
+      </div>
+      <div class="topbar-actions">
+        <span id="active-model-badge" class="badge badge-neutral">No Model</span>
+        <button class="btn btn-secondary btn-sm" onclick="fillSample()">Load Sample</button>
+      </div>
+    </header>
+
+    <div class="page-container">
+      <div class="grid-2-1">
+        <!-- Feature input form -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Network Flow Features</h3>
+            <button class="btn btn-secondary btn-sm" onclick="clearForm()">Clear</button>
+          </div>
+
+          <!-- Connection metadata -->
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; padding:16px; background:var(--bg-secondary); border-radius:10px;">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Source IP</label>
+              <input class="form-input" id="f-source-ip" placeholder="192.168.1.1">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Destination IP</label>
+              <input class="form-input" id="f-dest-ip" placeholder="10.0.0.1">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Protocol</label>
+              <select class="form-select" id="f-protocol">
+                <option value="TCP">TCP</option>
+                <option value="UDP">UDP</option>
+                <option value="ICMP">ICMP</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Source Port</label>
+              <input class="form-input" id="f-src-port" type="number" placeholder="1024">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Destination Port</label>
+              <input class="form-input" id="f-dst-port" type="number" placeholder="80">
+            </div>
+          </div>
+
+          <h4 style="font-size:13px; color:var(--text-secondary); margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">Flow Features</h4>
+          <div class="features-grid" id="features-grid">
+            <!-- populated by JS -->
+          </div>
+
+          <div style="margin-top:20px; display:flex; gap:12px;">
+            <button id="analyze-btn" class="btn btn-primary btn-lg" style="flex:1" onclick="runPrediction()">
+              🔍 Analyze Traffic
+            </button>
+          </div>
+        </div>
+
+        <!-- Result panel -->
+        <div>
+          <div id="result-placeholder" class="card" style="text-align:center; padding:60px 20px;">
+            <div style="font-size:48px; margin-bottom:16px; opacity:0.2">🛡️</div>
+            <h3 style="color:var(--text-muted); font-size:15px;">Awaiting Analysis</h3>
+            <p style="color:var(--text-muted); font-size:13px; margin-top:8px;">
+              Enter network flow features and click Analyze Traffic to get a prediction.
+            </p>
+          </div>
+
+          <div id="result-panel" class="hidden">
+            <!-- populated by JS -->
+          </div>
+
+          <!-- Quick Stats -->
+          <div class="card" style="margin-top:16px" id="recent-predictions-card">
+            <div class="card-header">
+              <h3 class="card-title">Recent Predictions</h3>
+            </div>
+            <div id="recent-predictions-list">
+              <div class="empty-state" style="padding:20px">
+                <p>No predictions yet this session.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+const KEY_FEATURES = [
+  'Flow Duration', 'Total Fwd Packets', 'Total Backward Packets',
+  'Total Length of Fwd Packets', 'Total Length of Bwd Packets',
+  'Fwd Packet Length Max', 'Fwd Packet Length Min', 'Fwd Packet Length Mean',
+  'Bwd Packet Length Mean', 'Flow Bytes/s', 'Flow Packets/s',
+  'Flow IAT Mean', 'Flow IAT Max', 'Fwd IAT Mean', 'Bwd IAT Mean',
+  'SYN Flag Count', 'ACK Flag Count', 'FIN Flag Count', 'RST Flag Count',
+  'PSH Flag Count', 'URG Flag Count', 'Average Packet Size',
+  'Init_Win_bytes_forward', 'Init_Win_bytes_backward',
+  'min_seg_size_forward', 'act_data_pkt_fwd',
+];
+
+const recentPredictions = [];
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  renderFeatureGrid();
+  loadActiveModel();
+}
+
+async function loadActiveModel() {
+  const resp = await api.models.active();
+  const badge = document.getElementById('active-model-badge');
+  if (resp.success && resp.data) {
+    badge.textContent = resp.data.version;
+    badge.className = 'badge badge-success';
+  } else {
+    badge.textContent = 'No Active Model';
+    badge.className = 'badge badge-neutral';
+  }
+}
+
+function renderFeatureGrid() {
+  const grid = document.getElementById('features-grid');
+  grid.innerHTML = KEY_FEATURES.map(f => `
+    <div class="feature-input-group">
+      <label title="${f}">${f}</label>
+      <input type="number" step="any" id="feat-${f.replace(/[^a-zA-Z0-9]/g,'-')}" placeholder="0">
+    </div>
+  `).join('');
+}
+
+function getFeatureValues() {
+  const features = {};
+  KEY_FEATURES.forEach(f => {
+    const id = `feat-${f.replace(/[^a-zA-Z0-9]/g,'-')}`;
+    const el = document.getElementById(id);
+    if (el) features[f] = parseFloat(el.value) || 0;
+  });
+  return features;
+}
+
+function clearForm() {
+  KEY_FEATURES.forEach(f => {
+    const el = document.getElementById(`feat-${f.replace(/[^a-zA-Z0-9]/g,'-')}`);
+    if (el) el.value = '';
+  });
+  ['f-source-ip','f-dest-ip','f-src-port','f-dst-port'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+function fillSample(type = 'portscan') {
+  const samples = {
+    portscan: {
+      'Flow Duration': 47, 'Total Fwd Packets': 1, 'Total Backward Packets': 0,
+      'Total Length of Fwd Packets': 48, 'Total Length of Bwd Packets': 0,
+      'Fwd Packet Length Max': 48, 'Fwd Packet Length Min': 48, 'Fwd Packet Length Mean': 48,
+      'Bwd Packet Length Mean': 0, 'Flow Bytes/s': 1021.28, 'Flow Packets/s': 21.28,
+      'Flow IAT Mean': 47, 'Flow IAT Max': 47, 'Fwd IAT Mean': 0, 'Bwd IAT Mean': 0,
+      'SYN Flag Count': 1, 'ACK Flag Count': 0, 'FIN Flag Count': 0, 'RST Flag Count': 0,
+      'PSH Flag Count': 0, 'URG Flag Count': 0, 'Average Packet Size': 48,
+      'Init_Win_bytes_forward': 1024, 'Init_Win_bytes_backward': -1,
+      'min_seg_size_forward': 8, 'act_data_pkt_fwd': 0,
+    },
+    normal: {
+      'Flow Duration': 102400, 'Total Fwd Packets': 12, 'Total Backward Packets': 10,
+      'Total Length of Fwd Packets': 3600, 'Total Length of Bwd Packets': 2900,
+      'Fwd Packet Length Max': 1448, 'Fwd Packet Length Min': 32, 'Fwd Packet Length Mean': 300,
+      'Bwd Packet Length Mean': 290, 'Flow Bytes/s': 63476, 'Flow Packets/s': 215,
+      'Flow IAT Mean': 4651, 'Flow IAT Max': 20000, 'Fwd IAT Mean': 4000, 'Bwd IAT Mean': 3800,
+      'SYN Flag Count': 1, 'ACK Flag Count': 12, 'FIN Flag Count': 1, 'RST Flag Count': 0,
+      'PSH Flag Count': 3, 'URG Flag Count': 0, 'Average Packet Size': 300,
+      'Init_Win_bytes_forward': 65535, 'Init_Win_bytes_backward': 65535,
+      'min_seg_size_forward': 20, 'act_data_pkt_fwd': 8,
+    }
+  };
+
+  const sample = samples[type] || samples.portscan;
+  Object.entries(sample).forEach(([f, v]) => {
+    const el = document.getElementById(`feat-${f.replace(/[^a-zA-Z0-9]/g,'-')}`);
+    if (el) el.value = v;
+  });
+
+  document.getElementById('f-source-ip').value = type === 'portscan' ? '192.168.100.50' : '192.168.1.10';
+  document.getElementById('f-dest-ip').value = type === 'portscan' ? '192.168.100.1' : '142.250.192.46';
+  document.getElementById('f-src-port').value = type === 'portscan' ? Math.floor(Math.random()*60000+1024) : 52340;
+  document.getElementById('f-dst-port').value = type === 'portscan' ? 445 : 443;
+  document.getElementById('f-protocol').value = 'TCP';
+
+  toast.info('Sample loaded', type === 'portscan' ? 'PortScan pattern loaded.' : 'Normal traffic pattern loaded.');
+}
+
+async function runPrediction() {
+  const features = getFeatureValues();
+  const hasData = Object.values(features).some(v => v !== 0);
+  if (!hasData) {
+    toast.warning('No data', 'Please enter feature values or load a sample.');
+    return;
+  }
+
+  setLoading('analyze-btn', true);
+
+  const payload = {
+    features,
+    source_ip: document.getElementById('f-source-ip').value || 'unknown',
+    destination_ip: document.getElementById('f-dest-ip').value || 'unknown',
+    source_port: parseInt(document.getElementById('f-src-port').value) || 0,
+    destination_port: parseInt(document.getElementById('f-dst-port').value) || 0,
+    protocol: document.getElementById('f-protocol').value || 'TCP',
+  };
+
+  const resp = await api.predict.single(payload);
+  setLoading('analyze-btn', false);
+
+  if (!resp.success) {
+    toast.error('Prediction failed', resp.message);
+    return;
+  }
+
+  const r = resp.data;
+  showResult(r);
+  addToRecentList(r, payload);
+}
+
+function showResult(r) {
+  document.getElementById('result-placeholder').classList.add('hidden');
+  const panel = document.getElementById('result-panel');
+  panel.classList.remove('hidden');
+
+  const isIntrusion = r.is_intrusion;
+  const sevClass = { CRITICAL: 'red', HIGH: 'orange', MEDIUM: 'yellow', LOW: 'green' }[r.severity] || 'teal';
+  const confColor = r.confidence >= 0.9 ? 'var(--accent-green)' : r.confidence >= 0.7 ? 'var(--accent-orange)' : 'var(--severity-critical)';
+
+  panel.innerHTML = `
+    <div class="prediction-result ${isIntrusion ? 'intrusion' : 'normal'}">
+      <div class="prediction-icon">${isIntrusion ? '🚨' : '✅'}</div>
+      <div class="prediction-status" style="color:${isIntrusion ? 'var(--severity-critical)' : 'var(--accent-green)'}">
+        ${escHtml(r.status)}
+      </div>
+      <div class="prediction-type">Attack Type: <strong>${escHtml(r.prediction)}</strong></div>
+      <div class="prediction-meta">
+        <div class="prediction-meta-item">
+          <div class="meta-label">Confidence</div>
+          <div class="meta-value" style="color:${confColor}">${fmt.confidence(r.confidence)}</div>
+        </div>
+        <div class="prediction-meta-item">
+          <div class="meta-label">Severity</div>
+          <div class="meta-value">${fmt.severity(r.severity)}</div>
+        </div>
+        <div class="prediction-meta-item">
+          <div class="meta-label">Model</div>
+          <div class="meta-value" style="font-size:13px">${escHtml(r.model_version)}</div>
+        </div>
+      </div>
+      ${r.is_intrusion ? `<div style="margin-top:16px"><a href="alerts.html" class="btn btn-danger btn-sm">View Alert →</a></div>` : ''}
+    </div>
+  `;
+
+  if (isIntrusion) {
+    toast.error('Intrusion Detected!', `${r.prediction} — Severity: ${r.severity}`);
+  } else {
+    toast.success('Normal Traffic', `Confidence: ${fmt.confidence(r.confidence)}`);
+  }
+}
+
+function addToRecentList(r, payload) {
+  recentPredictions.unshift({ result: r, payload, time: new Date() });
+  if (recentPredictions.length > 5) recentPredictions.pop();
+
+  const container = document.getElementById('recent-predictions-list');
+  container.innerHTML = recentPredictions.map(p => `
+    <div style="display:flex; align-items:center; gap:10px; padding:10px; border-bottom:1px solid var(--border-color)">
+      <span style="font-size:18px">${p.result.is_intrusion ? '🚨' : '✅'}</span>
+      <div style="flex:1; min-width:0">
+        <div style="font-size:13px; font-weight:600">${escHtml(p.result.prediction)}</div>
+        <div style="font-size:11px; color:var(--text-muted)">${fmt.datetime(p.time.toISOString())}</div>
+      </div>
+      ${fmt.severity(p.result.severity)}
+    </div>
+  `).join('');
+}
+
+init();
+</script>
+</body>
+</html>

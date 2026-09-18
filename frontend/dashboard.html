@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — NIDS</title>
+  <meta name="description" content="Real-time security monitoring dashboard for the AI-Based Network Intrusion Detection System.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        Dashboard
+        <div class="page-subtitle">Security Overview</div>
+      </div>
+      <div class="topbar-actions">
+        <div class="status-indicator">
+          <div class="status-dot" id="system-status-dot"></div>
+          <span id="system-status-text">System Active</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">↻ Refresh</button>
+      </div>
+    </header>
+
+    <div class="page-container">
+      <!-- Active Model Banner -->
+      <div id="model-banner" class="alert-banner info hidden">
+        No active model — <a href="models.html">train and activate a model</a> to start detection.
+      </div>
+
+      <!-- Stat Cards -->
+      <div class="stat-grid" id="stat-grid">
+        <!-- Populated by JS -->
+        <div class="stat-card teal"><div class="skeleton" style="height:80px"></div></div>
+        <div class="stat-card red"><div class="skeleton" style="height:80px"></div></div>
+        <div class="stat-card green"><div class="skeleton" style="height:80px"></div></div>
+        <div class="stat-card orange"><div class="skeleton" style="height:80px"></div></div>
+        <div class="stat-card purple"><div class="skeleton" style="height:80px"></div></div>
+        <div class="stat-card blue"><div class="skeleton" style="height:80px"></div></div>
+      </div>
+
+      <!-- Charts row 1 -->
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Traffic Trend (24h)</h3>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-trend"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Attack Distribution</h3>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-attacks"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts row 2 -->
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Severity Distribution</h3>
+          </div>
+          <div class="chart-wrapper short">
+            <canvas id="chart-severity"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Normal vs Intrusion</h3>
+          </div>
+          <div class="chart-wrapper short">
+            <canvas id="chart-normal-vs-intrusion"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Detections -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Recent Detections</h3>
+          <a href="detection-history.html" class="btn btn-secondary btn-sm">View All</a>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="recent-detections-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Source IP</th>
+                <th>Dest IP</th>
+                <th>Protocol</th>
+                <th>Prediction</th>
+                <th>Severity</th>
+                <th>Confidence</th>
+              </tr>
+            </thead>
+            <tbody id="recent-tbody">
+              <tr><td colspan="7" class="text-center" style="padding:30px;color:var(--text-muted)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let trendChart, attackChart, severityChart, nvChart;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  await loadDashboard();
+  // Auto-refresh every 30s
+  setInterval(loadDashboard, 30000);
+}
+
+async function loadDashboard() {
+  const [summaryResp, trendsResp] = await Promise.all([
+    api.dashboard.summary(),
+    api.dashboard.trends(),
+  ]);
+
+  if (!summaryResp.success) {
+    toast.error('Dashboard error', summaryResp.message);
+    return;
+  }
+
+  const d = summaryResp.data;
+
+  // Update stat cards
+  document.getElementById('stat-grid').innerHTML = `
+    <div class="stat-card teal">
+      <div class="stat-label">Total Traffic</div>
+      <div class="stat-value">${fmt.number(d.total_traffic)}</div>
+      <div class="stat-sub">All-time records</div>
+      <div class="stat-icon-bg">📊</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Intrusions</div>
+      <div class="stat-value">${fmt.number(d.intrusion_count)}</div>
+      <div class="stat-sub">${fmt.percentDirect(d.detection_rate)}% detection rate</div>
+      <div class="stat-icon-bg">⚠️</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Normal Traffic</div>
+      <div class="stat-value">${fmt.number(d.normal_traffic)}</div>
+      <div class="stat-sub">Clean connections</div>
+      <div class="stat-icon-bg">✓</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Active Alerts</div>
+      <div class="stat-value">${fmt.number(d.active_alerts)}</div>
+      <div class="stat-sub"><a href="alerts.html" style="color:var(--accent-orange)">View alerts →</a></div>
+      <div class="stat-icon-bg">🔔</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Critical Alerts</div>
+      <div class="stat-value" style="color:var(--severity-critical)">${fmt.number(d.severity_counts?.CRITICAL || 0)}</div>
+      <div class="stat-sub">HIGH: ${fmt.number(d.severity_counts?.HIGH || 0)}</div>
+      <div class="stat-icon-bg">🚨</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Active Model</div>
+      <div class="stat-value" style="font-size:16px;word-break:break-all">${d.active_model?.version || '—'}</div>
+      <div class="stat-sub">${d.active_model ? fmt.percent(d.active_model.accuracy) + ' accuracy' : 'No active model'}</div>
+      <div class="stat-icon-bg">🤖</div>
+    </div>
+  `;
+
+  // Model banner
+  const banner = document.getElementById('model-banner');
+  if (!d.active_model) {
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+
+  // Trend chart
+  if (trendsResp.success) {
+    const td = trendsResp.data;
+    renderTrendChart(td.hourly_traffic || []);
+    renderProtocolChart(td.protocol_distribution || []);
+  }
+
+  // Attack distribution chart
+  renderAttackChart(d.attack_distribution || []);
+
+  // Severity distribution
+  renderSeverityChart(d.severity_counts || {});
+
+  // Normal vs Intrusion
+  renderNvIChart(d.normal_traffic || 0, d.intrusion_count || 0);
+
+  // Recent detections table
+  renderRecentDetections(d.recent_detections || []);
+}
+
+function renderTrendChart(hourly) {
+  const ctx = document.getElementById('chart-trend').getContext('2d');
+  const labels = hourly.map(h => `${h._id?.day || ''}/${h._id?.hour || 0}:00`);
+  const totals = hourly.map(h => h.total || 0);
+  const intrusions = hourly.map(h => h.intrusions || 0);
+
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels.length ? labels : ['No data'],
+      datasets: [
+        {
+          label: 'Total',
+          data: totals.length ? totals : [0],
+          borderColor: CHART_COLORS.teal,
+          backgroundColor: 'rgba(0,212,180,0.1)',
+          tension: 0.4, fill: true, pointRadius: 3,
+        },
+        {
+          label: 'Intrusions',
+          data: intrusions.length ? intrusions : [0],
+          borderColor: CHART_COLORS.red,
+          backgroundColor: 'rgba(239,68,68,0.1)',
+          tension: 0.4, fill: true, pointRadius: 3,
+        }
+      ]
+    },
+    options: { ...chartDefaults() }
+  });
+}
+
+function renderAttackChart(attacks) {
+  const ctx = document.getElementById('chart-attacks').getContext('2d');
+  const filtered = attacks.filter(a => a.label !== 'BENIGN' && a.count > 0);
+
+  if (attackChart) attackChart.destroy();
+  attackChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: filtered.length ? filtered.map(a => a.label) : ['No Attacks'],
+      datasets: [{
+        data: filtered.length ? filtered.map(a => a.count) : [1],
+        backgroundColor: filtered.length ? CHART_PALETTE : ['rgba(100,100,100,0.3)'],
+        borderWidth: 2,
+        borderColor: 'var(--bg-card)',
+      }]
+    },
+    options: {
+      ...chartDefaults(),
+      scales: {},
+      cutout: '60%',
+    }
+  });
+}
+
+function renderSeverityChart(counts) {
+  const ctx = document.getElementById('chart-severity').getContext('2d');
+  const labels = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+  const data = labels.map(l => counts[l] || 0);
+  const colors = [CHART_COLORS.red, CHART_COLORS.orange, CHART_COLORS.yellow, CHART_COLORS.green];
+
+  if (severityChart) severityChart.destroy();
+  severityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Count', data, backgroundColor: colors, borderRadius: 6, borderWidth: 0 }]
+    },
+    options: { ...chartDefaults(), plugins: { ...chartDefaults().plugins, legend: { display: false } } }
+  });
+}
+
+function renderNvIChart(normal, intrusions) {
+  const ctx = document.getElementById('chart-normal-vs-intrusion').getContext('2d');
+  if (nvChart) nvChart.destroy();
+  nvChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: ['Normal', 'Intrusion'],
+      datasets: [{
+        data: [normal || 0, intrusions || 0],
+        backgroundColor: [CHART_COLORS.green, CHART_COLORS.red],
+        borderWidth: 2,
+        borderColor: 'var(--bg-card)',
+      }]
+    },
+    options: { ...chartDefaults(), scales: {} }
+  });
+}
+
+function renderRecentDetections(detections) {
+  const tbody = document.getElementById('recent-tbody');
+  if (!detections.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding:30px;color:var(--text-muted)">No detections yet. <a href="traffic-analysis.html">Run a prediction</a> to get started.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = detections.map(d => `
+    <tr>
+      <td class="mono" style="font-size:11px">${fmt.datetime(d.timestamp)}</td>
+      <td class="mono">${escHtml(d.source_ip || '—')}</td>
+      <td class="mono">${escHtml(d.destination_ip || '—')}</td>
+      <td>${escHtml(String(d.protocol || '—'))}</td>
+      <td>${fmt.prediction(d.prediction)}</td>
+      <td>${fmt.severity(d.severity)}</td>
+      <td class="mono">${fmt.confidence(d.confidence)}</td>
+    </tr>
+  `).join('');
+}
+
+init();
+</script>
+</body>
+</html>

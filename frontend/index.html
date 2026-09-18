@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — AI Network Intrusion Detection System</title>
+  <meta name="description" content="Secure login portal for the AI-Based Network Intrusion Detection and Real-Time Security Monitoring System.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="login-bg-grid"></div>
+  <div class="login-bg-glow"></div>
+
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-shield">🛡️</div>
+        <h1>NIDS Security</h1>
+        <p>AI-Based Network Intrusion Detection System</p>
+      </div>
+
+      <div id="login-error" class="alert-banner error hidden"></div>
+
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <div class="input-group">
+            <span class="input-icon">👤</span>
+            <input class="form-input" type="text" id="username" name="username"
+                   placeholder="Enter your username" autocomplete="username" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <div class="input-group">
+            <span class="input-icon">🔒</span>
+            <input class="form-input" type="password" id="password" name="password"
+                   placeholder="Enter your password" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <button type="submit" id="login-btn" class="btn btn-primary btn-full btn-lg" style="margin-top:8px">
+          <span>Sign In</span>
+        </button>
+      </form>
+
+      <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--border-color);">
+        <p style="font-size:12px; color:var(--text-muted); text-align:center; margin-bottom:8px">Demo credentials</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="fillCreds('admin','Admin@123')">
+            👑 Admin
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="fillCreds('analyst','Analyst@123')">
+            🔍 Analyst
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    // Redirect if already logged in
+    auth.init();
+    if (auth.isLoggedIn()) {
+      window.location.href = 'dashboard.html';
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('login-error');
+      errEl.classList.add('hidden');
+      errEl.textContent = '';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      if (!username || !password) {
+        errEl.textContent = 'Please enter username and password.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const btn = document.getElementById('login-btn');
+      setLoading('login-btn', true);
+
+      const resp = await api.auth.login(username, password);
+
+      setLoading('login-btn', false);
+
+      if (resp.success) {
+        api.setToken(resp.data.token);
+        auth.setUser(resp.data.user);
+        toast.success('Login successful', `Welcome, ${resp.data.user.full_name || resp.data.user.username}!`);
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 800);
+      } else {
+        errEl.textContent = resp.message || 'Login failed. Please check your credentials.';
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    function fillCreds(u, p) {
+      document.getElementById('username').value = u;
+      document.getElementById('password').value = p;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ML Models — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">ML Models <div class="page-subtitle">Training & Management</div></div>
+      <div class="topbar-actions" id="admin-actions">
+        <button class="btn btn-primary btn-sm" onclick="openModal('train-modal')">+ Train New Model</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('compare-modal')">Compare Models</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('models')">Trained Models</button>
+        <button class="tab-btn" onclick="switchTab('performance')">Performance</button>
+        <button class="tab-btn" onclick="switchTab('importance')">Feature Importance</button>
+      </div>
+
+      <!-- Models list -->
+      <div id="tab-models" class="tab-panel active">
+        <div id="models-grid" style="display:grid;gap:16px">
+          <div class="card"><div class="skeleton" style="height:160px"></div></div>
+        </div>
+      </div>
+
+      <!-- Performance metrics -->
+      <div id="tab-performance" class="tab-panel">
+        <div id="perf-content">
+          <div class="card">
+            <p style="color:var(--text-muted)">Select a model to view its performance metrics.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature importance -->
+      <div id="tab-importance" class="tab-panel">
+        <div id="importance-content">
+          <div class="card">
+            <p style="color:var(--text-muted)">Feature importance is shown for the active model.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Train Modal -->
+<div class="modal-overlay hidden" id="train-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Train New Model</h3>
+      <button class="modal-close" onclick="closeModal('train-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dataset</label>
+      <select class="form-select" id="train-dataset"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Model Type</label>
+      <select class="form-select" id="train-model-type">
+        <option value="random_forest">Random Forest (Recommended)</option>
+        <option value="decision_tree">Decision Tree</option>
+        <option value="logistic_regression">Logistic Regression</option>
+        <option value="svm">Support Vector Machine</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Test Size (%)</label>
+      <input class="form-input" id="train-test-size" type="number" min="10" max="40" value="20">
+    </div>
+    <div id="train-progress" class="hidden">
+      <div class="alert-banner info">Training in progress... This may take a few minutes.</div>
+      <div class="progress-bar-track"><div class="progress-bar-fill" id="train-pbar" style="width:0%"></div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('train-modal')">Cancel</button>
+      <button class="btn btn-primary" id="train-btn" onclick="trainModel()">Start Training</button>
+    </div>
+  </div>
+</div>
+
+<!-- Compare Modal -->
+<div class="modal-overlay hidden" id="compare-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Model Comparison</h3>
+      <button class="modal-close" onclick="closeModal('compare-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Dataset</label>
+      <select class="form-select" id="compare-dataset"></select>
+    </div>
+    <div id="compare-results"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('compare-modal')">Close</button>
+      <button class="btn btn-primary" id="compare-btn" onclick="compareModels()">Run Comparison</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let allModels = [];
+let isAdmin = false;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  isAdmin = auth.isAdmin();
+  renderSidebar();
+  if (!isAdmin) document.getElementById('admin-actions').classList.add('hidden');
+  loadModels();
+  loadDatasets();
+}
+
+async function loadModels() {
+  const resp = await api.models.list();
+  if (!resp.success) { toast.error('Failed to load models', resp.message); return; }
+  allModels = resp.data.models || [];
+  renderModelGrid();
+  if (allModels.length > 0) {
+    const active = allModels.find(m => m.status === 'ACTIVE') || allModels[0];
+    renderPerformance(active);
+    renderImportance(active);
+  }
+}
+
+async function loadDatasets() {
+  const resp = await api.datasets.list();
+  if (!resp.success) return;
+  const datasets = resp.data.datasets || [];
+  ['train-dataset','compare-dataset'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = datasets.length
+      ? datasets.map(d => `<option value="${d.id}">${escHtml(d.name)}</option>`).join('')
+      : '<option value="">No datasets uploaded</option>';
+  });
+}
+
+function renderModelGrid() {
+  const grid = document.getElementById('models-grid');
+  if (!allModels.length) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">🤖</div><h3>No models trained yet</h3><p>Upload a dataset and train your first model.</p></div>`;
+    return;
+  }
+  grid.innerHTML = allModels.map(m => {
+    const metrics = m.metrics || {};
+    const isActive = m.status === 'ACTIVE';
+    return `
+    <div class="model-card ${isActive ? 'active-model' : ''}">
+      <div class="model-card-header">
+        <div>
+          <div class="model-card-title">${escHtml(m.version || m.model_type)}</div>
+          <div class="model-card-type">${escHtml(m.model_label || m.model_type)}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${isActive ? '<span class="badge badge-success">ACTIVE</span>' : fmt.status(m.status)}
+          ${isAdmin && !isActive && m.status !== 'FAILED' ? `<button class="btn btn-primary btn-sm" onclick="activateModel('${m.id}')">Activate</button>` : ''}
+          ${isAdmin && !isActive ? `<button class="btn btn-danger btn-sm" onclick="deleteModel('${m.id}')">Delete</button>` : ''}
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+        Trained: ${fmt.date(m.created_at)} | Dataset: ${escHtml(m.dataset_name || '—')} | Features: ${m.feature_count || '—'}
+      </div>
+      <div class="model-card-metrics">
+        <div class="model-metric"><div class="m-val">${metrics.accuracy ? fmt.percent(metrics.accuracy) : '—'}</div><div class="m-lbl">Accuracy</div></div>
+        <div class="model-metric"><div class="m-val">${metrics.f1_weighted ? fmt.percent(metrics.f1_weighted) : '—'}</div><div class="m-lbl">F1 Weighted</div></div>
+        <div class="model-metric"><div class="m-val">${metrics.precision_weighted ? fmt.percent(metrics.precision_weighted) : '—'}</div><div class="m-lbl">Precision</div></div>
+        <div class="model-metric"><div class="m-val">${metrics.recall_weighted ? fmt.percent(metrics.recall_weighted) : '—'}</div><div class="m-lbl">Recall</div></div>
+      </div>
+    </div>
+  `;
+  }).join('');
+}
+
+function renderPerformance(model) {
+  const metrics = model.metrics || {};
+  const report = metrics.classification_report || {};
+  document.getElementById('perf-content').innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Performance Metrics — ${escHtml(model.version)}</h3></div>
+      <div class="metrics-row">
+        <div class="metric-box"><div class="metric-val">${metrics.accuracy ? fmt.percent(metrics.accuracy) : '—'}</div><div class="metric-lbl">Accuracy</div></div>
+        <div class="metric-box"><div class="metric-val">${metrics.f1_weighted ? fmt.percent(metrics.f1_weighted) : '—'}</div><div class="metric-lbl">F1 Weighted</div></div>
+        <div class="metric-box"><div class="metric-val">${metrics.precision_weighted ? fmt.percent(metrics.precision_weighted) : '—'}</div><div class="metric-lbl">Precision</div></div>
+        <div class="metric-box"><div class="metric-val">${metrics.recall_weighted ? fmt.percent(metrics.recall_weighted) : '—'}</div><div class="metric-lbl">Recall</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+        <div class="metric-box"><div class="metric-val">${metrics.f1_macro ? fmt.percent(metrics.f1_macro) : '—'}</div><div class="metric-lbl">F1 Macro</div></div>
+        <div class="metric-box"><div class="metric-val">${metrics.roc_auc ? fmt.percent(metrics.roc_auc) : 'N/A'}</div><div class="metric-lbl">ROC-AUC</div></div>
+      </div>
+      <div style="margin-top:16px;font-size:12px;color:var(--text-muted)">
+        Training: ${metrics.training_time || '—'}s | Prediction: ${metrics.prediction_time || '—'}s |
+        Test Samples: ${fmt.number(metrics.test_samples)}
+      </div>
+    </div>
+  `;
+}
+
+function renderImportance(model) {
+  const importance = model.feature_importance || [];
+  const content = document.getElementById('importance-content');
+  if (!importance.length) {
+    content.innerHTML = '<div class="card"><p class="text-muted">Feature importance not available for this model.</p></div>';
+    return;
+  }
+  const max = importance[0].importance;
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Top Features — ${escHtml(model.version)}</h3></div>
+      ${importance.slice(0, 20).map((f, i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-color)">
+          <span style="color:var(--text-muted);font-size:12px;min-width:20px">#${i+1}</span>
+          <span style="min-width:200px;font-size:12px;font-family:var(--font-mono)">${escHtml(f.feature)}</span>
+          <div style="flex:1"><div class="progress-bar-track"><div class="progress-bar-fill" style="width:${(f.importance/max*100).toFixed(0)}%"></div></div></div>
+          <span class="mono" style="font-size:12px;min-width:60px;text-align:right">${f.importance.toFixed(4)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function activateModel(modelId) {
+  if (!confirm('Activate this model for all new predictions?')) return;
+  const resp = await api.models.activate(modelId);
+  if (resp.success) { toast.success('Model activated'); loadModels(); }
+  else toast.error('Failed', resp.message);
+}
+
+async function deleteModel(modelId) {
+  if (!confirm('Delete this model? This cannot be undone.')) return;
+  const resp = await api.models.delete(modelId);
+  if (resp.success) { toast.success('Model deleted'); loadModels(); }
+  else toast.error('Failed', resp.message);
+}
+
+async function trainModel() {
+  const datasetId = document.getElementById('train-dataset').value;
+  const modelType = document.getElementById('train-model-type').value;
+  const testSize = parseInt(document.getElementById('train-test-size').value) / 100;
+  if (!datasetId) { toast.warning('Select a dataset', 'Please select a dataset first.'); return; }
+
+  setLoading('train-btn', true);
+  document.getElementById('train-progress').classList.remove('hidden');
+  let p = 0;
+  const timer = setInterval(() => {
+    p = Math.min(p + 3, 90);
+    document.getElementById('train-pbar').style.width = p + '%';
+  }, 500);
+
+  const resp = await api.models.train({ dataset_id: datasetId, model_type: modelType, test_size: testSize });
+
+  clearInterval(timer);
+  document.getElementById('train-pbar').style.width = '100%';
+  setLoading('train-btn', false);
+
+  if (resp.success) {
+    const m = resp.data;
+    toast.success('Training complete!', `Accuracy: ${fmt.percent(m.metrics?.accuracy)} | F1: ${fmt.percent(m.metrics?.f1_weighted)}`);
+    closeModal('train-modal');
+    document.getElementById('train-progress').classList.add('hidden');
+    loadModels();
+  } else {
+    toast.error('Training failed', resp.message);
+    document.getElementById('train-progress').classList.add('hidden');
+  }
+}
+
+async function compareModels() {
+  const datasetId = document.getElementById('compare-dataset').value;
+  if (!datasetId) { toast.warning('Select a dataset', ''); return; }
+  setLoading('compare-btn', true);
+  document.getElementById('compare-results').innerHTML = '<div class="alert-banner info">Running comparison... This may take several minutes.</div>';
+
+  const resp = await api.models.compare({ dataset_id: datasetId });
+  setLoading('compare-btn', false);
+
+  if (!resp.success) { toast.error('Comparison failed', resp.message); return; }
+  const results = resp.data.results || [];
+  document.getElementById('compare-results').innerHTML = `
+    <div class="table-container" style="margin-top:16px">
+      <table class="data-table">
+        <thead>
+          <tr><th>Model</th><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>Train Time</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          ${results.map(r => `<tr>
+            <td><strong>${escHtml(r.model_label)}</strong></td>
+            <td class="mono">${r.accuracy ? fmt.percent(r.accuracy) : '—'}</td>
+            <td class="mono">${r.precision ? fmt.percent(r.precision) : '—'}</td>
+            <td class="mono">${r.recall ? fmt.percent(r.recall) : '—'}</td>
+            <td class="mono">${r.f1_weighted ? fmt.percent(r.f1_weighted) : '—'}</td>
+            <td class="mono">${r.training_time || '—'}s</td>
+            <td><span class="badge ${r.status==='success' ? 'badge-success' : 'badge-critical'}">${r.status}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+init();
+</script>
+</body>
+</html>

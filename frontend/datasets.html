@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Datasets — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Datasets <div class="page-subtitle">Data Management</div></div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary btn-sm" onclick="openModal('upload-modal')">+ Upload Dataset</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <div id="datasets-grid" style="display:grid;gap:16px">
+        <div class="card"><div class="skeleton" style="height:100px"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal-overlay hidden" id="upload-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Upload Dataset</h3>
+      <button class="modal-close" onclick="closeModal('upload-modal')">✕</button>
+    </div>
+    <div class="upload-zone" id="modal-upload-zone" onclick="document.getElementById('dataset-file-input').click()">
+      <div class="upload-icon">📁</div>
+      <h3>Click to select CSV file</h3>
+      <p>CIC-IDS2017 format. Max 100MB.</p>
+      <input type="file" id="dataset-file-input" accept=".csv" style="display:none" onchange="handleUploadSelect(this)">
+    </div>
+    <div id="upload-file-info" class="hidden" style="margin-top:12px">
+      <span id="upload-file-name" style="font-weight:600"></span>
+      <span id="upload-file-size" style="color:var(--text-muted);font-size:12px;margin-left:8px"></span>
+    </div>
+    <div id="upload-progress" class="hidden" style="margin-top:12px">
+      <div class="alert-banner info">Uploading and validating...</div>
+    </div>
+    <div id="upload-result" class="hidden" style="margin-top:12px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('upload-modal'); resetUpload()">Close</button>
+      <button class="btn btn-primary" id="do-upload-btn" onclick="doUpload()" disabled>Upload</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let uploadFile = null;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadDatasets();
+}
+
+async function loadDatasets() {
+  const resp = await api.datasets.list();
+  const grid = document.getElementById('datasets-grid');
+  if (!resp.success) { grid.innerHTML = '<div class="alert-banner error">Failed to load datasets.</div>'; return; }
+  const datasets = resp.data.datasets || [];
+  if (!datasets.length) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📁</div>
+        <h3>No datasets uploaded yet</h3>
+        <p>Upload a CIC-IDS2017 format CSV file to get started.</p>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="openModal('upload-modal')">Upload Dataset</button>
+      </div>`;
+    return;
+  }
+  grid.innerHTML = datasets.map(d => {
+    const stats = d.stats || {};
+    return `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div style="font-size:15px;font-weight:700">${escHtml(d.name)}</div>
+          <div style="font-size:12px;color:var(--text-muted)">Uploaded: ${fmt.datetime(d.uploaded_at)} by ${escHtml(d.uploader || '—')}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span class="badge ${d.status === 'VALIDATED' ? 'badge-success' : 'badge-warning'}">${escHtml(d.status || '—')}</span>
+          ${auth.isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="deleteDataset('${d.id}', '${escHtml(d.name)}')">Delete</button>` : ''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:8px">
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Rows</div><div style="font-weight:700">${fmt.number(stats.total_rows)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Columns</div><div style="font-weight:700">${fmt.number(stats.total_columns)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Features</div><div style="font-weight:700">${fmt.number(stats.recognized_features)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Missing</div><div style="font-weight:700">${stats.missing_rate || 0}%</div></div>
+      </div>
+      ${stats.label_distribution ? `
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px">Label Distribution</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${Object.entries(stats.label_distribution).slice(0,8).map(([k,v]) => `<span class="badge badge-neutral">${escHtml(k)}: ${v}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `}).join('');
+}
+
+function handleUploadSelect(input) {
+  uploadFile = input.files[0];
+  if (!uploadFile) return;
+  document.getElementById('upload-file-name').textContent = uploadFile.name;
+  document.getElementById('upload-file-size').textContent = `${(uploadFile.size/1024/1024).toFixed(2)} MB`;
+  document.getElementById('upload-file-info').classList.remove('hidden');
+  document.getElementById('do-upload-btn').disabled = false;
+}
+
+async function doUpload() {
+  if (!uploadFile) return;
+  setLoading('do-upload-btn', true);
+  document.getElementById('upload-progress').classList.remove('hidden');
+  document.getElementById('upload-result').classList.add('hidden');
+
+  const fd = new FormData();
+  fd.append('file', uploadFile);
+  const resp = await api.datasets.upload(fd);
+  setLoading('do-upload-btn', false);
+  document.getElementById('upload-progress').classList.add('hidden');
+
+  const resultEl = document.getElementById('upload-result');
+  resultEl.classList.remove('hidden');
+
+  if (resp.success) {
+    resultEl.innerHTML = `<div class="alert-banner success">Dataset uploaded and validated! ${resp.data.stats?.total_rows || ''} rows, ${resp.data.stats?.recognized_features || ''} features.</div>`;
+    toast.success('Dataset uploaded', resp.data.filename);
+    loadDatasets();
+  } else {
+    const errors = resp.error?.details?.errors || [resp.message];
+    resultEl.innerHTML = `<div class="alert-banner error">${errors.map(e => escHtml(e)).join('<br>')}</div>`;
+  }
+}
+
+async function deleteDataset(id, name) {
+  if (!confirm(`Delete dataset "${name}"? This cannot be undone.`)) return;
+  const resp = await api.datasets.delete(id);
+  if (resp.success) { toast.success('Dataset deleted'); loadDatasets(); }
+  else toast.error('Failed', resp.message);
+}
+
+function resetUpload() {
+  uploadFile = null;
+  document.getElementById('dataset-file-input').value = '';
+  document.getElementById('upload-file-info').classList.add('hidden');
+  document.getElementById('upload-result').classList.add('hidden');
+  document.getElementById('do-upload-btn').disabled = true;
+}
+
+init();
+</script>
+</body>
+</html>

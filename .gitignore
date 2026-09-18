@@ -1,0 +1,36 @@
+# Environment
+.env
+*.pyc
+__pycache__/
+*.pyo
+.Python
+venv/
+env/
+.venv/
+
+# ML artifacts (exclude tracked samples)
+models/*.pkl
+models/*.joblib
+models/*/model.pkl
+models/*/scaler.pkl
+
+# Uploads
+dataset/uploads/
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detection History — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Detection History <div class="page-subtitle">All detection events</div></div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="loadDetections(1)">↻ Refresh</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <!-- Filters -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:160px">
+            <label class="form-label">Search IP</label>
+            <input class="form-input" id="filter-search" placeholder="Source or dest IP..." oninput="debouncedLoad()">
+          </div>
+          <div class="form-group" style="margin:0;min-width:140px">
+            <label class="form-label">Prediction</label>
+            <select class="form-select" id="filter-prediction" onchange="loadDetections(1)">
+              <option value="">All</option>
+              <option>BENIGN</option><option>DoS</option><option>DDoS</option>
+              <option>PortScan</option><option>Brute Force</option><option>Bot</option>
+              <option>Web Attack</option><option>Infiltration</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px">
+            <label class="form-label">Severity</label>
+            <select class="form-select" id="filter-severity" onchange="loadDetections(1)">
+              <option value="">All</option>
+              <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px">
+            <label class="form-label">Per Page</label>
+            <select class="form-select" id="filter-per-page" onchange="loadDetections(1)">
+              <option value="20">20</option><option value="50">50</option><option value="100">100</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th><th>Source IP</th><th>Dest IP</th>
+                <th>Protocol</th><th>Src Port</th><th>Dst Port</th>
+                <th>Prediction</th><th>Confidence</th><th>Severity</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="detection-tbody">
+              <tr><td colspan="10" class="text-center" style="padding:30px;color:var(--text-muted)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="detection-pagination" style="padding:12px 0"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let currentPage = 1;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadDetections(1);
+}
+
+async function loadDetections(page) {
+  currentPage = page || 1;
+  showTableLoading('detection-tbody', 10);
+
+  const params = { page: currentPage, per_page: document.getElementById('filter-per-page').value || 20 };
+  const search = document.getElementById('filter-search').value.trim();
+  const pred = document.getElementById('filter-prediction').value;
+  const sev = document.getElementById('filter-severity').value;
+  if (search) params.search = search;
+  if (pred) params.prediction = pred;
+  if (sev) params.severity = sev;
+
+  const resp = await api.detections.list(params);
+
+  if (!resp.success) {
+    showEmpty('detection-tbody', 'Failed to load detections.', 10);
+    return;
+  }
+
+  const d = resp.data;
+  if (!d.detections.length) {
+    showEmpty('detection-tbody', 'No detections found. Run a prediction to get started.', 10);
+    document.getElementById('detection-pagination').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('detection-tbody').innerHTML = d.detections.map(det => `
+    <tr>
+      <td class="mono" style="font-size:11px">${fmt.datetime(det.timestamp)}</td>
+      <td class="mono">${escHtml(det.source_ip || '—')}</td>
+      <td class="mono">${escHtml(det.destination_ip || '—')}</td>
+      <td>${escHtml(String(det.protocol || '—'))}</td>
+      <td class="mono">${det.source_port || '—'}</td>
+      <td class="mono">${det.destination_port || '—'}</td>
+      <td>${fmt.prediction(det.prediction)}</td>
+      <td class="mono">${fmt.confidence(det.confidence)}</td>
+      <td>${fmt.severity(det.severity)}</td>
+      <td>${fmt.status(det.status)}</td>
+    </tr>
+  `).join('');
+
+  buildPagination('detection-pagination', d, loadDetections);
+}
+
+function clearFilters() {
+  document.getElementById('filter-search').value = '';
+  document.getElementById('filter-prediction').value = '';
+  document.getElementById('filter-severity').value = '';
+  loadDetections(1);
+}
+
+const debouncedLoad = debounce(() => loadDetections(1), 400);
+init();
+</script>
+</body>
+</html>

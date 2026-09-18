@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Batch Detection — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Batch Detection <div class="page-subtitle">CSV Bulk Analysis</div></div>
+      <div class="topbar-actions">
+        <span id="active-model-badge" class="badge badge-neutral">Loading model...</span>
+      </div>
+    </header>
+    <div class="page-container">
+      <div class="grid-2-1">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Upload CSV for Batch Analysis</h3></div>
+          <div class="upload-zone" id="upload-zone" onclick="document.getElementById('batch-file').click()">
+            <div class="upload-icon">📁</div>
+            <h3>Drop CSV file here or click to browse</h3>
+            <p>Compatible with CIC-IDS2017 format. Max 100MB.</p>
+            <input type="file" id="batch-file" accept=".csv" style="display:none" onchange="handleFileSelect(this)">
+          </div>
+          <div id="file-info" class="hidden" style="margin-top:12px;padding:12px;background:var(--bg-secondary);border-radius:8px;">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:24px">📄</span>
+              <div>
+                <div id="file-name" style="font-weight:600;font-size:14px"></div>
+                <div id="file-size" style="font-size:12px;color:var(--text-muted)"></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="clearFile()">✕</button>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <button id="batch-btn" class="btn btn-primary btn-full btn-lg" onclick="runBatch()" disabled>
+              🔍 Run Batch Detection
+            </button>
+          </div>
+          <div id="progress-section" class="hidden" style="margin-top:16px">
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">Processing...</div>
+            <div class="progress-bar-track"><div class="progress-bar-fill" id="progress-fill" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card" id="results-placeholder" style="text-align:center;padding:60px 20px">
+            <div style="font-size:48px;margin-bottom:16px;opacity:0.2">📊</div>
+            <h3 style="color:var(--text-muted);font-size:15px">Awaiting Batch Upload</h3>
+            <p style="color:var(--text-muted);font-size:13px;margin-top:8px">Upload a CSV file to run bulk detection.</p>
+          </div>
+          <div id="results-panel" class="hidden">
+            <div class="card">
+              <div class="card-header"><h3 class="card-title">Results Summary</h3>
+                <button class="btn btn-secondary btn-sm" onclick="downloadResults()">⬇ Download</button>
+              </div>
+              <div class="metrics-row" id="batch-metrics"></div>
+              <div class="divider"></div>
+              <h4 style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Attack Categories</h4>
+              <div id="attack-categories-list"></div>
+              <div class="divider"></div>
+              <h4 style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">Severity Distribution</h4>
+              <div id="severity-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results preview table -->
+      <div class="card hidden" id="preview-table-card" style="margin-top:20px">
+        <div class="card-header">
+          <h3 class="card-title">Detection Results Preview (first 50)</h3>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr><th>#</th><th>Prediction</th><th>Intrusion</th><th>Confidence</th><th>Severity</th></tr>
+            </thead>
+            <tbody id="preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let selectedFile = null;
+let lastResults = null;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadActiveModel();
+  setupDragDrop();
+}
+
+async function loadActiveModel() {
+  const resp = await api.models.active();
+  const badge = document.getElementById('active-model-badge');
+  if (resp.success && resp.data) {
+    badge.textContent = resp.data.version;
+    badge.className = 'badge badge-success';
+  } else {
+    badge.textContent = 'No Active Model';
+    badge.className = 'badge badge-critical';
+  }
+}
+
+function setupDragDrop() {
+  const zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) setFile(file);
+    else toast.error('Invalid file', 'Only CSV files are supported.');
+  });
+}
+
+function handleFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(file) {
+  selectedFile = file;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('batch-btn').disabled = false;
+  document.getElementById('upload-zone').style.display = 'none';
+}
+
+function clearFile() {
+  selectedFile = null;
+  document.getElementById('batch-file').value = '';
+  document.getElementById('file-info').classList.add('hidden');
+  document.getElementById('batch-btn').disabled = true;
+  document.getElementById('upload-zone').style.display = '';
+}
+
+async function runBatch() {
+  if (!selectedFile) return;
+
+  setLoading('batch-btn', true);
+  document.getElementById('progress-section').classList.remove('hidden');
+  let prog = 0;
+  const timer = setInterval(() => {
+    prog = Math.min(prog + 5, 90);
+    document.getElementById('progress-fill').style.width = prog + '%';
+  }, 300);
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+
+  const resp = await api.predict.batch(fd);
+
+  clearInterval(timer);
+  document.getElementById('progress-fill').style.width = '100%';
+  setLoading('batch-btn', false);
+
+  if (!resp.success) {
+    toast.error('Batch prediction failed', resp.message);
+    document.getElementById('progress-section').classList.add('hidden');
+    return;
+  }
+
+  lastResults = resp.data;
+  showResults(resp.data);
+  toast.success('Batch complete', `${fmt.number(resp.data.total_records)} records processed.`);
+  setTimeout(() => document.getElementById('progress-section').classList.add('hidden'), 1000);
+}
+
+function showResults(data) {
+  document.getElementById('results-placeholder').classList.add('hidden');
+  const panel = document.getElementById('results-panel');
+  panel.classList.remove('hidden');
+
+  document.getElementById('batch-metrics').innerHTML = `
+    <div class="metric-box"><div class="metric-val">${fmt.number(data.total_records)}</div><div class="metric-lbl">Total</div></div>
+    <div class="metric-box"><div class="metric-val" style="color:var(--accent-green)">${fmt.number(data.normal_records)}</div><div class="metric-lbl">Normal</div></div>
+    <div class="metric-box"><div class="metric-val" style="color:var(--severity-critical)">${fmt.number(data.intrusion_records)}</div><div class="metric-lbl">Intrusions</div></div>
+    <div class="metric-box"><div class="metric-val">${data.total_records > 0 ? ((data.intrusion_records/data.total_records)*100).toFixed(1) : 0}%</div><div class="metric-lbl">Intrusion Rate</div></div>
+  `;
+
+  const atk = data.attack_categories || {};
+  document.getElementById('attack-categories-list').innerHTML = Object.entries(atk).map(([k,v]) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-color)">
+      <span>${escHtml(k)}</span><span class="badge badge-critical">${fmt.number(v)}</span>
+    </div>
+  `).join('') || '<div style="color:var(--text-muted);font-size:13px">No attacks detected.</div>';
+
+  const sev = data.severity_distribution || {};
+  const sevColors = { CRITICAL:'badge-critical', HIGH:'badge-high', MEDIUM:'badge-medium', LOW:'badge-low' };
+  document.getElementById('severity-list').innerHTML = ['CRITICAL','HIGH','MEDIUM','LOW'].map(s => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+      <span class="badge ${sevColors[s]}">${s}</span><span style="font-weight:700">${fmt.number(sev[s] || 0)}</span>
+    </div>
+  `).join('');
+
+  // Preview table
+  const preview = data.results_preview || [];
+  if (preview.length) {
+    document.getElementById('preview-table-card').classList.remove('hidden');
+    document.getElementById('preview-tbody').innerHTML = preview.map(r => `
+      <tr>
+        <td class="mono">${r.row_index}</td>
+        <td>${fmt.prediction(r.prediction)}</td>
+        <td>${r.is_intrusion ? '<span style="color:var(--severity-critical)">YES</span>' : '<span style="color:var(--accent-green)">NO</span>'}</td>
+        <td class="mono">${fmt.confidence(r.confidence)}</td>
+        <td>${fmt.severity(r.severity)}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+function downloadResults() {
+  if (!lastResults) return;
+  const rows = [['row_index','prediction','is_intrusion','confidence','severity']];
+  (lastResults.results_preview || []).forEach(r => {
+    rows.push([r.row_index, r.prediction, r.is_intrusion, r.confidence, r.severity]);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `nids_batch_results_${Date.now()}.csv`;
+  a.click();
+  toast.success('Downloaded', 'Results saved to file.');
+}
+
+init();
+</script>
+</body>
+</html>

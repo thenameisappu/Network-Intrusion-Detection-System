@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Logs — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Audit Logs <div class="page-subtitle">System Activity</div></div>
+    </header>
+    <div class="page-container">
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:180px">
+            <label class="form-label">Event Type</label>
+            <select class="form-select" id="filter-event" onchange="loadLogs(1)">
+              <option value="">All Events</option>
+              <option>LOGIN</option><option>LOGOUT</option><option>LOGIN_FAILED</option>
+              <option>USER_CREATED</option><option>USER_DELETED</option>
+              <option>DATASET_UPLOADED</option><option>DATASET_DELETED</option>
+              <option>MODEL_TRAINED</option><option>MODEL_ACTIVATED</option><option>MODEL_DELETED</option>
+              <option>ALERT_ACKNOWLEDGED</option><option>ALERT_RESOLVED</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr><th>Timestamp</th><th>Event</th><th>User</th><th>Details</th></tr>
+            </thead>
+            <tbody id="logs-tbody"></tbody>
+          </table>
+        </div>
+        <div id="logs-pagination"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  if (!auth.isAdmin()) { window.location.href = 'dashboard.html'; return; }
+  renderSidebar();
+  loadLogs(1);
+}
+
+async function loadLogs(page = 1) {
+  showTableLoading('logs-tbody', 4);
+  const params = { page, per_page: 30 };
+  const event = document.getElementById('filter-event').value;
+  if (event) params.event = event;
+  const resp = await api.admin.auditLogs(params);
+  if (!resp.success) { showEmpty('logs-tbody', 'Failed to load logs.', 4); return; }
+  const d = resp.data;
+  if (!d.logs.length) { showEmpty('logs-tbody', 'No audit logs found.', 4); return; }
+  document.getElementById('logs-tbody').innerHTML = d.logs.map(l => {
+    const evtColors = {
+      LOGIN: 'badge-success', LOGOUT: 'badge-neutral', LOGIN_FAILED: 'badge-critical',
+      MODEL_TRAINED: 'badge-info', MODEL_ACTIVATED: 'badge-success',
+      DATASET_UPLOADED: 'badge-info', USER_DELETED: 'badge-critical',
+      ALERT_RESOLVED: 'badge-success', ALERT_ACKNOWLEDGED: 'badge-warning',
+    };
+    const details = l.details ? Object.entries(l.details).map(([k,v]) => `${k}: ${v}`).join(', ') : '—';
+    return `<tr>
+      <td class="mono" style="font-size:11px">${fmt.datetime(l.timestamp)}</td>
+      <td><span class="badge ${evtColors[l.event] || 'badge-neutral'}">${escHtml(l.event)}</span></td>
+      <td>${escHtml(l.username || '—')}</td>
+      <td style="font-size:12px;color:var(--text-secondary);max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(details)}</td>
+    </tr>`;
+  }).join('');
+  buildPagination('logs-pagination', d, loadLogs);
+}
+
+function clearFilters() {
+  document.getElementById('filter-event').value = '';
+  loadLogs(1);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Analytics <div class="page-subtitle">Security Intelligence</div></div>
+      <div class="topbar-actions">
+        <select id="trend-days" class="form-select" style="width:120px" onchange="loadAll()">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadAll()">↻ Refresh</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <!-- Overview stats -->
+      <div class="stat-grid" id="overview-stats">
+        <div class="stat-card teal"><div class="skeleton" style="height:70px"></div></div>
+        <div class="stat-card red"><div class="skeleton" style="height:70px"></div></div>
+        <div class="stat-card green"><div class="skeleton" style="height:70px"></div></div>
+        <div class="stat-card orange"><div class="skeleton" style="height:70px"></div></div>
+      </div>
+
+      <!-- Charts row 1 -->
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Attack Distribution</h3></div>
+          <div class="chart-wrapper"><canvas id="chart-attacks"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Severity Distribution</h3></div>
+          <div class="chart-wrapper"><canvas id="chart-severity"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Attack trend -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header"><h3 class="card-title">Attack Trend Over Time</h3></div>
+        <div class="chart-wrapper tall"><canvas id="chart-trend"></canvas></div>
+      </div>
+
+      <!-- Protocol + top IPs -->
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Protocol Distribution</h3></div>
+          <div class="chart-wrapper"><canvas id="chart-protocol"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Top Source IPs</h3></div>
+          <div id="top-src-ips"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Top Destination IPs</h3></div>
+        <div id="top-dst-ips"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let charts = {};
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadAll();
+}
+
+async function loadAll() {
+  const days = document.getElementById('trend-days').value;
+  const [overviewResp, attacksResp, severityResp, protocolResp, trendResp, ipsResp] = await Promise.all([
+    api.analytics.overview(),
+    api.analytics.attacks(),
+    api.analytics.severity(),
+    api.analytics.protocols(),
+    api.analytics.trends(days),
+    api.analytics.topIps(10),
+  ]);
+
+  if (overviewResp.success) renderOverview(overviewResp.data);
+  if (attacksResp.success) renderAttacks(attacksResp.data.distribution);
+  if (severityResp.success) renderSeverity(severityResp.data.distribution);
+  if (protocolResp.success) renderProtocol(protocolResp.data.distribution);
+  if (trendResp.success) renderTrend(trendResp.data.daily);
+  if (ipsResp.success) {
+    renderIps('top-src-ips', ipsResp.data.source_ips);
+    renderIps('top-dst-ips', ipsResp.data.destination_ips);
+  }
+}
+
+function renderOverview(d) {
+  document.getElementById('overview-stats').innerHTML = `
+    <div class="stat-card teal">
+      <div class="stat-label">Total Traffic</div>
+      <div class="stat-value">${fmt.number(d.total)}</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Intrusions</div>
+      <div class="stat-value">${fmt.number(d.intrusions)}</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Normal</div>
+      <div class="stat-value">${fmt.number(d.normal)}</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Detection Rate</div>
+      <div class="stat-value">${fmt.percentDirect(d.detection_rate)}%</div>
+    </div>
+  `;
+}
+
+function mkChart(id, type, labels, datasets, extraOpts = {}) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  const opts = { ...chartDefaults(), ...extraOpts };
+  charts[id] = new Chart(ctx, { type, data: { labels, datasets }, options: opts });
+}
+
+function renderAttacks(dist) {
+  const filtered = dist.filter(d => d.label !== 'BENIGN' && d.count > 0);
+  mkChart('chart-attacks', 'doughnut',
+    filtered.length ? filtered.map(d => d.label) : ['No Attacks'],
+    [{ data: filtered.length ? filtered.map(d => d.count) : [1],
+       backgroundColor: filtered.length ? CHART_PALETTE : ['rgba(100,100,100,0.3)'],
+       borderColor: 'var(--bg-card)', borderWidth: 2 }],
+    { scales: {}, cutout: '60%' }
+  );
+}
+
+function renderSeverity(dist) {
+  const labels = ['CRITICAL','HIGH','MEDIUM','LOW'];
+  const counts = labels.map(l => (dist.find(d => d.label === l) || {count:0}).count);
+  const colors = [CHART_COLORS.red, CHART_COLORS.orange, CHART_COLORS.yellow, CHART_COLORS.green];
+  mkChart('chart-severity', 'bar', labels,
+    [{ label: 'Alerts', data: counts, backgroundColor: colors, borderRadius: 6, borderWidth: 0 }],
+    { plugins: { ...chartDefaults().plugins, legend: { display: false } } }
+  );
+}
+
+function renderProtocol(dist) {
+  mkChart('chart-protocol', 'pie',
+    dist.length ? dist.map(d => d.label) : ['No Data'],
+    [{ data: dist.length ? dist.map(d => d.count) : [1],
+       backgroundColor: dist.length ? CHART_PALETTE : ['rgba(100,100,100,0.3)'],
+       borderColor: 'var(--bg-card)', borderWidth: 2 }],
+    { scales: {} }
+  );
+}
+
+function renderTrend(daily) {
+  const grouped = {};
+  (daily || []).forEach(d => {
+    const key = `${d._id?.year}-${String(d._id?.month).padStart(2,'0')}-${String(d._id?.day).padStart(2,'0')}`;
+    if (!grouped[key]) grouped[key] = {};
+    grouped[key][d._id?.attack || 'Unknown'] = (grouped[key][d._id?.attack] || 0) + d.count;
+  });
+
+  const labels = Object.keys(grouped).sort();
+  const attacks = [...new Set((daily || []).map(d => d._id?.attack).filter(Boolean))];
+  const datasets = attacks.map((atk, i) => ({
+    label: atk,
+    data: labels.map(day => (grouped[day] || {})[atk] || 0),
+    borderColor: CHART_PALETTE[i % CHART_PALETTE.length],
+    backgroundColor: 'transparent',
+    tension: 0.3, pointRadius: 3,
+  }));
+
+  if (!datasets.length) {
+    mkChart('chart-trend', 'line', ['No Data'], [{ label: 'No attacks', data: [0], borderColor: CHART_COLORS.teal }]);
+  } else {
+    mkChart('chart-trend', 'line', labels, datasets);
+  }
+}
+
+function renderIps(containerId, ips) {
+  const el = document.getElementById(containerId);
+  if (!ips || !ips.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No data available.</p></div>';
+    return;
+  }
+  const max = ips[0].count;
+  el.innerHTML = ips.map(item => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-color)">
+      <span class="mono" style="min-width:130px;font-size:12px">${escHtml(item.ip || 'Unknown')}</span>
+      <div style="flex:1"><div class="progress-bar-track"><div class="progress-bar-fill" style="width:${(item.count/max*100).toFixed(0)}%"></div></div></div>
+      <span class="badge badge-info">${fmt.number(item.count)}</span>
+    </div>
+  `).join('');
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Monitor — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Real-Time Monitor <div class="page-subtitle">Live Simulation</div></div>
+      <div class="topbar-actions">
+        <div class="status-indicator">
+          <div class="status-dot" id="monitor-status-dot" style="background:var(--text-muted);box-shadow:none"></div>
+          <span id="monitor-status-text">Stopped</span>
+        </div>
+        <button id="start-btn" class="btn btn-primary btn-sm" onclick="startMonitor()">▶ Start</button>
+        <button id="stop-btn" class="btn btn-secondary btn-sm hidden" onclick="stopMonitor()">⏹ Stop</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearFeed()">Clear</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <!-- Session counters -->
+      <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="stat-card teal"><div class="stat-label">Total Analyzed</div><div class="stat-value" id="s-total">0</div></div>
+        <div class="stat-card green"><div class="stat-label">Normal</div><div class="stat-value" id="s-normal">0</div></div>
+        <div class="stat-card red"><div class="stat-label">Intrusions</div><div class="stat-value" id="s-intrusions">0</div></div>
+        <div class="stat-card orange"><div class="stat-label">Alerts Raised</div><div class="stat-value" id="s-alerts">0</div></div>
+        <div class="stat-card purple"><div class="stat-label">Rate (%)</div><div class="stat-value" id="s-rate">0</div></div>
+      </div>
+
+      <div class="grid-2-1">
+        <!-- Feed -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Live Detection Feed</h3>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span id="feed-count" style="font-size:12px;color:var(--text-muted)">0 events</span>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);cursor:pointer">
+                <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+              </label>
+            </div>
+          </div>
+          <div class="simulation-feed scrollbar-thin" id="detection-feed">
+            <div style="text-align:center;color:var(--text-muted);padding:60px 20px">
+              <div style="font-size:40px;margin-bottom:12px;opacity:0.3">📡</div>
+              Click <strong>Start</strong> to begin real-time simulation.
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings + Alert log -->
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h3 class="card-title">Simulation Settings</h3></div>
+            <div class="form-group">
+              <label class="form-label">Traffic Pattern</label>
+              <select class="form-select" id="traffic-pattern">
+                <option value="mixed">Mixed (Realistic)</option>
+                <option value="attack_heavy">Attack Heavy</option>
+                <option value="mostly_normal">Mostly Normal</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Interval (ms)</label>
+              <input class="form-input" type="number" id="sim-interval" value="1500" min="500" max="5000">
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3 class="card-title">Recent Alerts</h3></div>
+            <div id="alert-sidebar" style="max-height:300px;overflow-y:auto">
+              <div style="text-align:center;color:var(--text-muted);font-size:13px;padding:20px">No alerts yet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let simTimer = null;
+let sessionStats = { total: 0, normal: 0, intrusions: 0, alerts: 0 };
+const recentAlerts = [];
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+}
+
+function startMonitor() {
+  const interval = parseInt(document.getElementById('sim-interval').value) || 1500;
+  document.getElementById('start-btn').classList.add('hidden');
+  document.getElementById('stop-btn').classList.remove('hidden');
+  document.getElementById('monitor-status-dot').style.cssText = '';
+  document.getElementById('monitor-status-text').textContent = 'Monitoring...';
+
+  const firstLine = document.getElementById('detection-feed').querySelector('div');
+  if (firstLine && firstLine.style.textAlign === 'center') {
+    document.getElementById('detection-feed').innerHTML = '';
+  }
+
+  simTimer = setInterval(simulateOne, interval);
+  simulateOne(); // Immediate first call
+}
+
+function stopMonitor() {
+  clearInterval(simTimer);
+  simTimer = null;
+  document.getElementById('start-btn').classList.remove('hidden');
+  document.getElementById('stop-btn').classList.add('hidden');
+  document.getElementById('monitor-status-dot').style.background = 'var(--text-muted)';
+  document.getElementById('monitor-status-dot').style.boxShadow = 'none';
+  document.getElementById('monitor-status-text').textContent = 'Stopped';
+}
+
+function clearFeed() {
+  stopMonitor();
+  document.getElementById('detection-feed').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px 20px"><div style="font-size:40px;margin-bottom:12px;opacity:0.3">📡</div>Click <strong>Start</strong> to begin real-time simulation.</div>';
+  sessionStats = { total: 0, normal: 0, intrusions: 0, alerts: 0 };
+  updateStats();
+}
+
+async function simulateOne() {
+  const pattern = document.getElementById('traffic-pattern').value;
+  const features = generateSampleFeatures(pattern);
+
+  // Simulate realistic IP addresses
+  const srcIp = randomIp();
+  const dstIp = randomIp();
+  const dstPort = [80, 443, 22, 21, 53, 8080, 3389][Math.floor(Math.random()*7)];
+
+  const resp = await api.predict.single({
+    features,
+    source_ip: srcIp,
+    destination_ip: dstIp,
+    source_port: Math.floor(Math.random() * 60000) + 1024,
+    destination_port: dstPort,
+    protocol: ['TCP','UDP','ICMP'][Math.floor(Math.random()*3)],
+  });
+
+  if (!resp.success) return; // Backend error, skip
+
+  const r = resp.data;
+  sessionStats.total++;
+  if (r.is_intrusion) { sessionStats.intrusions++; if (r.severity === 'CRITICAL' || r.severity === 'HIGH') sessionStats.alerts++; }
+  else sessionStats.normal++;
+  updateStats();
+  addFeedItem(r, srcIp, dstIp, dstPort);
+}
+
+function addFeedItem(r, srcIp, dstIp, dstPort) {
+  const feed = document.getElementById('detection-feed');
+  const item = document.createElement('div');
+  item.className = `feed-item ${r.is_intrusion ? 'intrusion' : 'normal'}`;
+  item.innerHTML = `
+    <span class="feed-time">${new Date().toLocaleTimeString()}</span>
+    <span style="font-size:16px">${r.is_intrusion ? '🚨' : '✅'}</span>
+    <span class="feed-ip">${srcIp} → ${dstIp}:${dstPort}</span>
+    <span class="feed-type">${fmt.prediction(r.prediction)}</span>
+    <span>${fmt.severity(r.severity)}</span>
+    <span class="mono" style="font-size:11px;color:var(--text-muted)">${fmt.confidence(r.confidence)}</span>
+  `;
+  feed.insertBefore(item, feed.firstChild);
+
+  // Update feed count
+  const count = feed.children.length;
+  document.getElementById('feed-count').textContent = `${count} events`;
+
+  // Limit to 200 items
+  if (count > 200) feed.removeChild(feed.lastChild);
+
+  // Alert sidebar
+  if (r.is_intrusion) {
+    recentAlerts.unshift({ ...r, src: srcIp, dst: dstIp, time: new Date() });
+    if (recentAlerts.length > 20) recentAlerts.pop();
+    renderAlertSidebar();
+    if (r.severity === 'CRITICAL') toast.error('CRITICAL', `${r.prediction} from ${srcIp}`, 6000);
+    else if (r.severity === 'HIGH') toast.warning('HIGH Severity', `${r.prediction} from ${srcIp}`, 4000);
+  }
+}
+
+function renderAlertSidebar() {
+  const el = document.getElementById('alert-sidebar');
+  el.innerHTML = recentAlerts.map(a => `
+    <div style="padding:8px;border-bottom:1px solid var(--border-color);font-size:12px">
+      <div style="display:flex;justify-content:space-between">
+        <span style="font-weight:600;color:var(--severity-critical)">${escHtml(a.prediction)}</span>
+        ${fmt.severity(a.severity)}
+      </div>
+      <div style="color:var(--text-muted);margin-top:2px">${a.src} → ${a.dst}</div>
+      <div style="color:var(--text-muted)">${a.time.toLocaleTimeString()}</div>
+    </div>
+  `).join('');
+}
+
+function updateStats() {
+  document.getElementById('s-total').textContent = fmt.number(sessionStats.total);
+  document.getElementById('s-normal').textContent = fmt.number(sessionStats.normal);
+  document.getElementById('s-intrusions').textContent = fmt.number(sessionStats.intrusions);
+  document.getElementById('s-alerts').textContent = fmt.number(sessionStats.alerts);
+  const rate = sessionStats.total > 0 ? ((sessionStats.intrusions/sessionStats.total)*100).toFixed(1) : 0;
+  document.getElementById('s-rate').textContent = rate;
+}
+
+function generateSampleFeatures(pattern) {
+  const base = {
+    'Flow Duration': Math.random() * 100000,
+    'Total Fwd Packets': Math.floor(Math.random() * 50) + 1,
+    'Total Backward Packets': Math.floor(Math.random() * 40),
+    'Total Length of Fwd Packets': Math.random() * 5000,
+    'Total Length of Bwd Packets': Math.random() * 4000,
+    'Fwd Packet Length Max': Math.random() * 1500,
+    'Fwd Packet Length Min': Math.random() * 64 + 20,
+    'Fwd Packet Length Mean': Math.random() * 600 + 50,
+    'Fwd Packet Length Std': Math.random() * 200,
+    'Bwd Packet Length Mean': Math.random() * 500 + 50,
+    'Flow Bytes/s': Math.random() * 100000,
+    'Flow Packets/s': Math.random() * 500,
+    'Flow IAT Mean': Math.random() * 10000,
+    'Flow IAT Max': Math.random() * 50000,
+    'Fwd IAT Mean': Math.random() * 8000,
+    'Bwd IAT Mean': Math.random() * 7000,
+    'SYN Flag Count': Math.floor(Math.random() * 5),
+    'ACK Flag Count': Math.floor(Math.random() * 20),
+    'FIN Flag Count': Math.floor(Math.random() * 3),
+    'RST Flag Count': Math.floor(Math.random() * 2),
+    'PSH Flag Count': Math.floor(Math.random() * 5),
+    'URG Flag Count': 0,
+    'Average Packet Size': Math.random() * 700 + 40,
+    'Init_Win_bytes_forward': [65535, 32768, 8192, 1024, 0][Math.floor(Math.random()*5)],
+    'Init_Win_bytes_backward': [65535, 32768, 8192, 1024][Math.floor(Math.random()*4)],
+    'min_seg_size_forward': 20,
+    'act_data_pkt_fwd': Math.floor(Math.random() * 10),
+  };
+
+  if (pattern === 'attack_heavy' && Math.random() < 0.6) {
+    // Inject attack-like pattern
+    base['SYN Flag Count'] = Math.floor(Math.random() * 200) + 50;
+    base['Flow Duration'] = Math.random() * 2000;
+    base['Total Fwd Packets'] = Math.floor(Math.random() * 1000) + 100;
+    base['Flow Bytes/s'] = Math.random() * 5000000;
+    base['Fwd Packet Length Mean'] = Math.random() * 40 + 5;
+    base['Init_Win_bytes_forward'] = Math.floor(Math.random() * 4);
+  } else if (pattern === 'mostly_normal') {
+    // Normal-biased features
+    base['Flow Duration'] = Math.random() * 200000 + 10000;
+    base['SYN Flag Count'] = Math.floor(Math.random() * 2);
+    base['Init_Win_bytes_forward'] = [65535, 32768][Math.floor(Math.random()*2)];
+  }
+  return base;
+}
+
+function randomIp() {
+  const prefixes = ['192.168.', '10.0.', '172.16.', '45.33.', '104.21.', '8.8.'];
+  const prefix = prefixes[Math.floor(Math.random()*prefixes.length)];
+  return prefix + Math.floor(Math.random()*255) + '.' + Math.floor(Math.random()*254+1);
+}
+
+init();
+</script>
+</body>
+</html>

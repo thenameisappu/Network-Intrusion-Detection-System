@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alerts — NIDS</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">Security Alerts <div class="page-subtitle">Alert Management</div></div>
+      <div class="topbar-actions">
+        <div id="alert-counts" style="display:flex;gap:8px"></div>
+        <button class="btn btn-secondary btn-sm" onclick="loadAlerts(1)">↻ Refresh</button>
+      </div>
+    </header>
+    <div class="page-container">
+      <!-- Filters -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:140px">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="filter-status" onchange="loadAlerts(1)">
+              <option value="">All</option>
+              <option>ACTIVE</option><option>ACKNOWLEDGED</option><option>RESOLVED</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:130px">
+            <label class="form-label">Severity</label>
+            <select class="form-select" id="filter-severity" onchange="loadAlerts(1)">
+              <option value="">All</option>
+              <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:140px">
+            <label class="form-label">Attack Type</label>
+            <select class="form-select" id="filter-attack" onchange="loadAlerts(1)">
+              <option value="">All</option>
+              <option>DoS</option><option>DDoS</option><option>PortScan</option>
+              <option>Brute Force</option><option>Bot</option><option>Web Attack</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th><th>Source IP</th><th>Dest IP</th>
+                <th>Attack Type</th><th>Severity</th><th>Confidence</th>
+                <th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="alerts-tbody"></tbody>
+          </table>
+        </div>
+        <div id="alerts-pagination"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Note Modal -->
+<div class="modal-overlay hidden" id="note-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="note-modal-title">Add Investigation Note</h3>
+      <button class="modal-close" onclick="closeModal('note-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Note</label>
+      <textarea class="form-textarea" id="note-text" placeholder="Enter investigation notes..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('note-modal')">Cancel</button>
+      <button class="btn btn-primary" id="save-note-btn" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/sidebar.js"></script>
+<script>
+let currentNoteAlertId = null;
+
+async function init() {
+  const user = await auth.requireAuth();
+  if (!user) return;
+  renderSidebar();
+  loadAlertSummary();
+  loadAlerts(1);
+  setInterval(() => { loadAlertSummary(); loadAlerts(); }, 30000);
+}
+
+async function loadAlertSummary() {
+  const resp = await api.alerts.summary();
+  if (!resp.success) return;
+  const s = resp.data.severity_counts || {};
+  document.getElementById('alert-counts').innerHTML = `
+    <span class="badge badge-critical">CRITICAL: ${s.CRITICAL || 0}</span>
+    <span class="badge badge-high">HIGH: ${s.HIGH || 0}</span>
+    <span class="badge badge-medium">MEDIUM: ${s.MEDIUM || 0}</span>
+  `;
+}
+
+async function loadAlerts(page = 1) {
+  showTableLoading('alerts-tbody', 8);
+  const params = { page, per_page: 20 };
+  const status = document.getElementById('filter-status').value;
+  const sev = document.getElementById('filter-severity').value;
+  const atk = document.getElementById('filter-attack').value;
+  if (status) params.status = status;
+  if (sev) params.severity = sev;
+  if (atk) params.attack_type = atk;
+
+  const resp = await api.alerts.list(params);
+  if (!resp.success) {
+    showEmpty('alerts-tbody', 'Failed to load alerts.', 8);
+    return;
+  }
+
+  const d = resp.data;
+  if (!d.alerts.length) {
+    showEmpty('alerts-tbody', 'No alerts found.', 8);
+    document.getElementById('alerts-pagination').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('alerts-tbody').innerHTML = d.alerts.map(a => `
+    <tr>
+      <td class="mono" style="font-size:11px">${fmt.datetime(a.timestamp)}</td>
+      <td class="mono">${escHtml(a.source_ip || '—')}</td>
+      <td class="mono">${escHtml(a.destination_ip || '—')}</td>
+      <td>${escHtml(a.attack_type || '—')}</td>
+      <td>${fmt.severity(a.severity)}</td>
+      <td class="mono">${fmt.confidence(a.confidence)}</td>
+      <td>${fmt.status(a.status)}</td>
+      <td>
+        <div style="display:flex;gap:4px">
+          ${a.status === 'ACTIVE' ? `<button class="btn btn-warning btn-sm" onclick="acknowledge('${a.id}')">Ack</button>` : ''}
+          ${a.status !== 'RESOLVED' ? `<button class="btn btn-success btn-sm" onclick="resolve('${a.id}')">Resolve</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="openNoteModal('${a.id}')">Note</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  buildPagination('alerts-pagination', d, loadAlerts);
+}
+
+async function acknowledge(alertId) {
+  const resp = await api.alerts.acknowledge(alertId);
+  if (resp.success) { toast.success('Alert acknowledged'); loadAlerts(); } 
+  else toast.error('Failed', resp.message);
+}
+
+async function resolve(alertId) {
+  const resp = await api.alerts.resolve(alertId, '');
+  if (resp.success) { toast.success('Alert resolved'); loadAlerts(); }
+  else toast.error('Failed', resp.message);
+}
+
+function openNoteModal(alertId) {
+  currentNoteAlertId = alertId;
+  document.getElementById('note-text').value = '';
+  openModal('note-modal');
+}
+
+async function saveNote() {
+  const note = document.getElementById('note-text').value.trim();
+  if (!note) { toast.warning('Empty note', 'Please enter a note.'); return; }
+  const resp = await api.alerts.addNote(currentNoteAlertId, note);
+  if (resp.success) { toast.success('Note saved'); closeModal('note-modal'); }
+  else toast.error('Failed', resp.message);
+}
+
+function clearFilters() {
+  ['filter-status','filter-severity','filter-attack'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  loadAlerts(1);
+}
+
+init();
+</script>
+</body>
+</html>
