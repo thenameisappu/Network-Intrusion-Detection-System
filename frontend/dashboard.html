@@ -196,7 +196,7 @@ async function loadDashboard() {
   if (trendsResp.success) {
     const td = trendsResp.data;
     renderTrendChart(td.hourly_traffic || []);
-    renderProtocolChart(td.protocol_distribution || []);
+    // Protocol distribution is rendered on the Analytics page
   }
 
   // Attack distribution chart

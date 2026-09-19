@@ -96,9 +96,10 @@ const fmt = {
       ACKNOWLEDGED: '<span class="badge badge-warning">ACKNOWLEDGED</span>',
       RESOLVED:     '<span class="badge badge-success">RESOLVED</span>',
       TRAINED:      '<span class="badge badge-info">TRAINED</span>',
-      ACTIVE:       '<span class="badge badge-success">ACTIVE</span>',
+      RUNNING:      '<span class="badge badge-success">RUNNING</span>',
       ARCHIVED:     '<span class="badge badge-neutral">ARCHIVED</span>',
       FAILED:       '<span class="badge badge-critical">FAILED</span>',
+      VALIDATED:    '<span class="badge badge-success">VALIDATED</span>',
     };
     return map[s] || `<span class="badge badge-neutral">${s || '—'}</span>`;
   },

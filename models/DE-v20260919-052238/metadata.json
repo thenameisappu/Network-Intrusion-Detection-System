@@ -1,0 +1,227 @@
+{
+  "model_id": "831bf0e1",
+  "version": "DE-v20260919-052238",
+  "model_type": "decision_tree",
+  "model_label": "Decision Tree",
+  "model_dir": "models\\DE-v20260919-052238",
+  "dataset_name": "sample_nids_data.csv",
+  "training_date": "2026-09-19T05:22:39.439245",
+  "feature_count": 76,
+  "training_samples": 8000,
+  "test_samples": 2000,
+  "total_samples": 10000,
+  "classes": [
+    "BENIGN",
+    "Bot",
+    "Brute Force",
+    "DDoS",
+    "DoS",
+    "PortScan"
+  ],
+  "metrics": {
+    "accuracy": 0.854,
+    "precision_macro": 0.6599870257699844,
+    "recall_macro": 0.6600517723832101,
+    "f1_macro": 0.6598000085487111,
+    "f1_weighted": 0.8556991844045702,
+    "precision_weighted": 0.8574891036346013,
+    "recall_weighted": 0.854,
+    "roc_auc": 0.8347020603679494,
+    "confusion_matrix": [
+      [
+        998,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        3,
+        18,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        22,
+        149,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        39,
+        122,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        130,
+        309,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        210
+      ]
+    ],
+    "confusion_matrix_labels": [
+      "BENIGN",
+      "Bot",
+      "Brute Force",
+      "DDoS",
+      "DoS",
+      "PortScan"
+    ],
+    "classification_report": {
+      "BENIGN": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 998.0
+      },
+      "Bot": {
+        "precision": 0.12,
+        "recall": 0.14285714285714285,
+        "f1-score": 0.13043478260869565,
+        "support": 21.0
+      },
+      "Brute Force": {
+        "precision": 0.8922155688622755,
+        "recall": 0.8713450292397661,
+        "f1-score": 0.8816568047337278,
+        "support": 171.0
+      },
+      "DDoS": {
+        "precision": 0.23076923076923078,
+        "recall": 0.2422360248447205,
+        "f1-score": 0.23636363636363636,
+        "support": 161.0
+      },
+      "DoS": {
+        "precision": 0.7169373549883991,
+        "recall": 0.7038724373576309,
+        "f1-score": 0.7103448275862069,
+        "support": 439.0
+      },
+      "PortScan": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 210.0
+      },
+      "accuracy": 0.854,
+      "macro avg": {
+        "precision": 0.6599870257699844,
+        "recall": 0.6600517723832101,
+        "f1-score": 0.6598000085487111,
+        "support": 2000.0
+      },
+      "weighted avg": {
+        "precision": 0.8574891036346013,
+        "recall": 0.854,
+        "f1-score": 0.8556991844045702,
+        "support": 2000.0
+      }
+    },
+    "test_samples": 2000,
+    "training_time": 0.3,
+    "prediction_time": 0.07
+  },
+  "feature_importance": [
+    {
+      "feature": "Init_Win_bytes_forward",
+      "importance": 0.213374
+    },
+    {
+      "feature": "Total Fwd Packets",
+      "importance": 0.211579
+    },
+    {
+      "feature": "SYN Flag Count",
+      "importance": 0.189235
+    },
+    {
+      "feature": "FIN Flag Count",
+      "importance": 0.022257
+    },
+    {
+      "feature": "Bwd IAT Total",
+      "importance": 0.018891
+    },
+    {
+      "feature": "Flow Packets/s",
+      "importance": 0.015686
+    },
+    {
+      "feature": "Bwd Packets/s",
+      "importance": 0.013816
+    },
+    {
+      "feature": "Max Packet Length",
+      "importance": 0.013686
+    },
+    {
+      "feature": "Flow IAT Mean",
+      "importance": 0.012479
+    },
+    {
+      "feature": "Idle Std",
+      "importance": 0.012416
+    },
+    {
+      "feature": "Total Length of Fwd Packets",
+      "importance": 0.011879
+    },
+    {
+      "feature": "Active Max",
+      "importance": 0.01172
+    },
+    {
+      "feature": "Subflow Fwd Bytes",
+      "importance": 0.010956
+    },
+    {
+      "feature": "Active Mean",
+      "importance": 0.010441
+    },
+    {
+      "feature": "Fwd IAT Min",
+      "importance": 0.010006
+    },
+    {
+      "feature": "Fwd Header Length",
+      "importance": 0.009896
+    },
+    {
+      "feature": "Fwd Packet Length Std",
+      "importance": 0.009593
+    },
+    {
+      "feature": "Init_Win_bytes_backward",
+      "importance": 0.009295
+    },
+    {
+      "feature": "Flow Bytes/s",
+      "importance": 0.009259
+    },
+    {
+      "feature": "Bwd Header Length",
+      "importance": 0.009227
+    }
+  ],
+  "trained_by": "admin",
+  "status": "TRAINED"
+}

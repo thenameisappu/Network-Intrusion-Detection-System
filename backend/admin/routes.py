@@ -82,13 +82,17 @@ def system_stats():
 @admin_required
 def settings():
     from backend.database.connection import get_db
+    from backend.database.repositories.base import _now
     db = get_db()
     if request.method == "GET":
         settings_doc = db.system_settings.find_one({"key": "main"}) or {}
+        # Remove DB-specific fields before returning
         settings_doc.pop("_id", None)
         return success_response("Settings retrieved.", data=settings_doc)
     else:
         data = request.get_json(silent=True) or {}
+        data.pop("_id", None)  # Never allow overwriting _id
+        data["updated_at"] = _now()
         db.system_settings.update_one(
             {"key": "main"}, {"$set": data}, upsert=True
         )

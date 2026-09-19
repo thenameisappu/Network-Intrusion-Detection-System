@@ -2,6 +2,7 @@
 from flask import Blueprint, request, g
 from backend.database.repositories.alert_repo import AlertRepository
 from backend.database.repositories.audit_repo import AuditRepository
+from backend.database.repositories.base import _now
 from backend.utils.response import success_response, error_response
 from backend.utils.decorators import login_required
 
@@ -43,7 +44,6 @@ def get_alert(alert_id: str):
 @alerts_bp.route("/<alert_id>/acknowledge", methods=["POST"])
 @login_required
 def acknowledge_alert(alert_id: str):
-    from datetime import datetime
     repo = AlertRepository()
     alert = repo.find_by_id(alert_id)
     if not alert:
@@ -51,7 +51,7 @@ def acknowledge_alert(alert_id: str):
 
     repo.update_status(alert_id, "ACKNOWLEDGED", {
         "acknowledged_by": g.current_user["username"],
-        "acknowledged_at": datetime.utcnow(),
+        "acknowledged_at": _now(),
     })
     AuditRepository().log("ALERT_ACKNOWLEDGED", user_id=g.current_user["id"],
                           username=g.current_user["username"],
@@ -62,7 +62,6 @@ def acknowledge_alert(alert_id: str):
 @alerts_bp.route("/<alert_id>/resolve", methods=["POST"])
 @login_required
 def resolve_alert(alert_id: str):
-    from datetime import datetime
     data = request.get_json(silent=True) or {}
     note = data.get("note", "")
 
@@ -73,7 +72,7 @@ def resolve_alert(alert_id: str):
 
     repo.update_status(alert_id, "RESOLVED", {
         "resolved_by": g.current_user["username"],
-        "resolved_at": datetime.utcnow(),
+        "resolved_at": _now(),
     })
     if note:
         repo.add_note(alert_id, {"text": note, "author": g.current_user["username"]})

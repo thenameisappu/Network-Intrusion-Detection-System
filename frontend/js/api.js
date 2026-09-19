@@ -101,12 +101,16 @@ const api = {
   // Download helper — triggers file download from API
   async download(path, filename) {
     const url = `${API_BASE}${path}`;
-    const headers = {};
     const t = this.getToken();
-    if (t) headers['Authorization'] = `Bearer ${t}`;
     try {
-      const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify({}),
-        headers: { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' } });
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${t}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
       if (!resp.ok) {
         toast.error('Download failed', 'Server returned an error.');
         return;
