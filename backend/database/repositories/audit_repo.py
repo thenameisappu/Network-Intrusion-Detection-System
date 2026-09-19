@@ -1,19 +1,9 @@
 """Audit log repository — immutable append-only security event log."""
-from datetime import datetime
-from bson import ObjectId
 from backend.database.connection import get_db
+from backend.database.repositories.base import _serialize, _now
 from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _serialize(doc) -> dict:
-    if doc is None:
-        return None
-    doc["id"] = str(doc.pop("_id"))
-    if "timestamp" in doc and hasattr(doc["timestamp"], "isoformat"):
-        doc["timestamp"] = doc["timestamp"].isoformat()
-    return doc
 
 
 class AuditRepository:
@@ -29,7 +19,7 @@ class AuditRepository:
         ip_address: str = None,
     ) -> str:
         entry = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": _now(),
             "event": event,
             "user_id": user_id,
             "username": username,

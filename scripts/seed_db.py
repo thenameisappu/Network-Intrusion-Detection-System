@@ -44,7 +44,7 @@ else:
         "role": "admin",
         "is_active": True,
     })
-    print(f"✅ Admin user created: username=admin, password=Admin@123 (id={user_id})")
+    print(f"[OK] Admin user created: username=admin, password=Admin@123 (id={user_id})")
 
 # Create analyst demo user
 analyst_username = "analyst"
@@ -61,7 +61,7 @@ else:
         "role": "analyst",
         "is_active": True,
     })
-    print(f"✅ Analyst user created: username=analyst, password=Analyst@123 (id={analyst_id})")
+    print(f"[OK] Analyst user created: username=analyst, password=Analyst@123 (id={analyst_id})")
 
 # System settings
 db = get_db()
@@ -78,9 +78,9 @@ db.system_settings.update_one(
     }},
     upsert=True,
 )
-print("✅ System settings initialised.")
+print("[OK] System settings initialised.")
 print("\nSetup complete! You can now start the backend:")
 print("  python backend/app.py")
 print("\nDefault credentials:")
-print("  Admin   — username: admin    | password: Admin@123")
-print("  Analyst — username: analyst  | password: Analyst@123")
+print("  Admin   - username: admin    | password: Admin@123")
+print("  Analyst - username: analyst  | password: Analyst@123")

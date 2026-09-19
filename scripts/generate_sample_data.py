@@ -247,7 +247,7 @@ for col in FEATURES:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).clip(lower=0)
 
 df.to_csv(OUTPUT_FILE, index=False)
-print(f"\n✅ Sample dataset saved: {OUTPUT_FILE}")
+print(f"\n[OK] Sample dataset saved: {OUTPUT_FILE}")
 print(f"   Total rows: {len(df)}")
 print(f"   Columns: {len(df.columns)}")
 print("\nLabel distribution:")

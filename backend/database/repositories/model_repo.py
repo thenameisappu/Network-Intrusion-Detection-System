@@ -1,20 +1,9 @@
 """Model metadata repository — tracks all trained model versions."""
-from datetime import datetime
-from bson import ObjectId
 from backend.database.connection import get_db
+from backend.database.repositories.base import _serialize, _now, id_query
 from backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _serialize(doc) -> dict:
-    if doc is None:
-        return None
-    doc["id"] = str(doc.pop("_id"))
-    for field in ("created_at", "updated_at"):
-        if field in doc and hasattr(doc[field], "isoformat"):
-            doc[field] = doc[field].isoformat()
-    return doc
 
 
 class ModelRepository:
@@ -22,15 +11,15 @@ class ModelRepository:
         self._col = get_db()["models"]
 
     def create(self, model_data: dict) -> str:
-        model_data["created_at"] = datetime.utcnow()
-        model_data["updated_at"] = datetime.utcnow()
+        model_data["created_at"] = _now()
+        model_data["updated_at"] = _now()
         model_data.setdefault("status", "TRAINED")
         result = self._col.insert_one(model_data)
         return str(result.inserted_id)
 
     def find_by_id(self, model_id: str) -> dict:
         try:
-            doc = self._col.find_one({"_id": ObjectId(model_id)})
+            doc = self._col.find_one(id_query(model_id))
             return _serialize(doc)
         except Exception:
             return None
@@ -44,25 +33,31 @@ class ModelRepository:
         return [_serialize(d) for d in cursor]
 
     def set_active(self, model_id: str) -> bool:
-        """Deactivate all, then activate the specified model."""
+        """Deactivate all models, then activate the specified one."""
         self._col.update_many(
-            {"status": "ACTIVE"}, {"$set": {"status": "ARCHIVED", "updated_at": datetime.utcnow()}}
+            {"status": "ACTIVE"},
+            {"$set": {"status": "ARCHIVED", "updated_at": _now()}}
         )
         result = self._col.update_one(
-            {"_id": ObjectId(model_id)},
-            {"$set": {"status": "ACTIVE", "updated_at": datetime.utcnow()}},
+            id_query(model_id),
+            {"$set": {"status": "ACTIVE", "updated_at": _now()}},
         )
         return result.modified_count > 0
 
     def update_status(self, model_id: str, status: str) -> bool:
         result = self._col.update_one(
-            {"_id": ObjectId(model_id)},
-            {"$set": {"status": status, "updated_at": datetime.utcnow()}},
+            id_query(model_id),
+            {"$set": {"status": status, "updated_at": _now()}},
         )
         return result.modified_count > 0
 
+    def update(self, model_id: str, data: dict) -> bool:
+        data["updated_at"] = _now()
+        result = self._col.update_one(id_query(model_id), {"$set": data})
+        return result.modified_count > 0
+
     def delete(self, model_id: str) -> bool:
-        result = self._col.delete_one({"_id": ObjectId(model_id)})
+        result = self._col.delete_one(id_query(model_id))
         return result.deleted_count > 0
 
     def count(self) -> int:
