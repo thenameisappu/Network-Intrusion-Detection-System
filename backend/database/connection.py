@@ -3,7 +3,9 @@ MongoDB connection with automatic TinyDB fallback.
 - Tries MongoDB first (localhost:27017 by default).
 - If MongoDB is unavailable, transparently switches to TinyDB (JSON file-based).
 - All repository code uses the same interface regardless of backend.
+- TinyDB is NOT thread-safe: a global lock serialises all TinyDB access.
 """
+import threading
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.database import Database
 from backend.utils.logger import get_logger
@@ -14,6 +16,7 @@ _client: MongoClient = None
 _db: Database = None
 _using_tinydb: bool = False
 _tinydb_instance = None
+_tinydb_lock = threading.Lock()  # Serialise all TinyDB access — it is NOT thread-safe
 
 
 def init_db(app) -> None:
@@ -101,43 +104,53 @@ class TinyDBCollection:
         return str(uuid.uuid4())
 
     def insert_one(self, doc: dict):
-        doc = dict(doc)
-        if "_id" not in doc:
-            doc["_id"] = self._make_id()
-        self._table.insert(doc)
-        class Result:
-            inserted_id = doc["_id"]
-        return Result()
-
-    def insert_many(self, docs: list):
-        ids = []
-        for doc in docs:
+        with _tinydb_lock:
             doc = dict(doc)
             if "_id" not in doc:
                 doc["_id"] = self._make_id()
-            ids.append(doc["_id"])
             self._table.insert(doc)
-        class Result:
-            inserted_ids = ids
-        return Result()
+            class Result:
+                inserted_id = doc["_id"]
+            return Result()
+
+    def insert_many(self, docs: list):
+        with _tinydb_lock:
+            ids = []
+            for doc in docs:
+                doc = dict(doc)
+                if "_id" not in doc:
+                    doc["_id"] = self._make_id()
+                ids.append(doc["_id"])
+                self._table.insert(doc)
+            class Result:
+                inserted_ids = ids
+            return Result()
 
     def find_one(self, query: dict = None, projection: dict = None):
-        results = self.find(query or {})
-        return next(iter(results), None)
+        with _tinydb_lock:
+            results = self._find_unlocked(query or {})
+            return next(iter(results), None)
 
     def find(self, query: dict = None, projection: dict = None):
-        from tinydb import Query
+        with _tinydb_lock:
+            return _TinyDBCursor(self._find_unlocked(query or {}))
+
+    def _find_unlocked(self, query: dict):
         all_docs = self._table.all()
         if not query:
-            return _TinyDBCursor(list(all_docs))
-        filtered = [d for d in all_docs if self._matches(d, query)]
-        return _TinyDBCursor(filtered)
+            return list(all_docs)
+        return [d for d in all_docs if self._matches(d, query)]
 
     def count_documents(self, query: dict = None) -> int:
-        return len(list(self.find(query or {})))
+        with _tinydb_lock:
+            return len(self._find_unlocked(query or {}))
 
     def update_one(self, query: dict, update: dict, upsert: bool = False):
-        docs = list(self.find(query))
+        with _tinydb_lock:
+            return self._update_one_unlocked(query, update, upsert)
+
+    def _update_one_unlocked(self, query: dict, update: dict, upsert: bool = False):
+        docs = self._find_unlocked(query)
         if docs:
             doc = docs[0]
             set_data = update.get("$set", {})
@@ -171,36 +184,38 @@ class TinyDBCollection:
         return Result()
 
     def update_many(self, query: dict, update: dict):
-        docs = list(self.find(query))
-        count = 0
-        for doc in docs:
-            set_data = update.get("$set", {})
-            updated = dict(doc)
-            updated.update(set_data)
-            from tinydb import Query
-            q = Query()
-            self._table.update(updated, q._id == doc["_id"])
-            count += 1
-        class Result:
-            modified_count = count
-        return Result()
+        with _tinydb_lock:
+            docs = self._find_unlocked(query)
+            count = 0
+            for doc in docs:
+                set_data = update.get("$set", {})
+                updated = dict(doc)
+                updated.update(set_data)
+                from tinydb import Query
+                q = Query()
+                self._table.update(updated, q._id == doc["_id"])
+                count += 1
+            class Result:
+                modified_count = count
+            return Result()
 
     def delete_one(self, query: dict):
-        docs = list(self.find(query))
-        if docs:
-            from tinydb import Query
-            q = Query()
-            self._table.remove(q._id == docs[0]["_id"])
+        with _tinydb_lock:
+            docs = self._find_unlocked(query)
+            if docs:
+                from tinydb import Query
+                q = Query()
+                self._table.remove(q._id == docs[0]["_id"])
+                class Result:
+                    deleted_count = 1
+                return Result()
             class Result:
-                deleted_count = 1
+                deleted_count = 0
             return Result()
-        class Result:
-            deleted_count = 0
-        return Result()
 
     def aggregate(self, pipeline: list):
-        """Minimal aggregate support for common patterns."""
-        docs = list(self._table.all())
+        with _tinydb_lock:
+            docs = list(self._table.all())
         for stage in pipeline:
             if "$match" in stage:
                 docs = [d for d in docs if self._matches(d, stage["$match"])]

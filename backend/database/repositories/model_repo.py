@@ -17,9 +17,15 @@ class ModelRepository:
         result = self._col.insert_one(model_data)
         return str(result.inserted_id)
 
+    def _model_query(self, model_id: str) -> dict:
+        try:
+            return {"$or": [{"_id": str(model_id)}, {"model_id": str(model_id)}]}
+        except Exception:
+            return {"_id": str(model_id)}
+
     def find_by_id(self, model_id: str) -> dict:
         try:
-            doc = self._col.find_one(id_query(model_id))
+            doc = self._col.find_one(self._model_query(model_id))
             return _serialize(doc)
         except Exception:
             return None
@@ -39,7 +45,7 @@ class ModelRepository:
             {"$set": {"status": "ARCHIVED", "updated_at": _now()}}
         )
         result = self._col.update_one(
-            id_query(model_id),
+            self._model_query(model_id),
             {"$set": {"status": "ACTIVE", "updated_at": _now()}},
         )
         return result.modified_count > 0

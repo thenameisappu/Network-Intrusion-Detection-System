@@ -48,13 +48,20 @@ const api = {
     try {
       const resp = await fetch(url, options);
 
-      // Handle 401 globally
+      // Handle 401 globally — but ONLY redirect to login if /auth/me itself fails.
+      // Parallel requests (e.g. dashboard trends + summary via Promise.all) can
+      // legitimately get 401 from one of them due to race conditions; clearing the
+      // session in that case incorrectly logs the user out.
       if (resp.status === 401) {
-        auth.clearSession();
-        if (!window.location.pathname.includes('index.html') && window.location.pathname !== '/') {
-          window.location.href = 'index.html';
+        const isAuthCheck = path === '/auth/me';
+        const data401 = await resp.json().catch(() => ({}));
+        if (isAuthCheck) {
+          auth.clearSession();
+          if (!window.location.pathname.includes('index.html') && window.location.pathname !== '/') {
+            window.location.href = 'index.html';
+          }
         }
-        return { success: false, message: 'Session expired. Please log in again.' };
+        return { success: false, message: data401.message || 'Session expired. Please log in again.' };
       }
 
       const data = await resp.json();
@@ -163,6 +170,14 @@ const api = {
   predict: {
     single: (d) => api.post('/predict', d),
     batch: (fd) => api.upload('/predict/batch', fd),
+  },
+  network: {
+    interfaces: () => api.get('/network/interfaces'),
+    startCapture: (iface) => api.post('/network/capture/start', { interface: iface }),
+    stopCapture: () => api.post('/network/capture/stop'),
+    captureStatus: () => api.get('/network/capture/status'),
+    events: (limit = 50, since = 0) => api.get(`/network/capture/events?limit=${limit}&since=${since}`),
+    injectTestFlow: (d) => api.post('/network/capture/inject-test-flow', d),
   },
   detections: {
     list: (params = {}) => {

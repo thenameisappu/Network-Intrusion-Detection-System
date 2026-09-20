@@ -4,39 +4,131 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Real-Time Monitor — NIDS</title>
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    .mode-tab-group {
+      display: inline-flex;
+      background: var(--bg-input);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      gap: 4px;
+    }
+    .mode-tab {
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border: none;
+      background: transparent;
+      transition: all 0.2s;
+    }
+    .mode-tab.active {
+      background: var(--accent-teal);
+      color: #050d1a;
+      font-weight: 600;
+    }
+    .badge-live {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .badge-sim {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+      background: rgba(0, 136, 255, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(0, 136, 255, 0.4);
+    }
+    .banner-warning {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      color: #fcd34d;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .banner-warning a {
+      color: #60a5fa;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+    .banner-success {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      color: #a7f3d0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
 </head>
 <body>
 <div class="app-layout">
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main-content">
     <header class="topbar">
-      <div class="topbar-title">Real-Time Monitor <div class="page-subtitle">Live Simulation</div></div>
+      <div class="topbar-title">
+        Real-Time Monitor
+        <div class="page-subtitle" id="monitor-subtitle">Live Network & Simulation</div>
+      </div>
       <div class="topbar-actions">
         <div class="status-indicator">
           <div class="status-dot" id="monitor-status-dot" style="background:var(--text-muted);box-shadow:none"></div>
           <span id="monitor-status-text">Stopped</span>
         </div>
-        <button id="start-btn" class="btn btn-primary btn-sm" onclick="startMonitor()">▶ Start</button>
-        <button id="stop-btn" class="btn btn-secondary btn-sm hidden" onclick="stopMonitor()">⏹ Stop</button>
-        <button class="btn btn-secondary btn-sm" onclick="clearFeed()">Clear</button>
+        <button id="start-btn" class="btn btn-primary btn-sm" onclick="startCurrentMode()">▶ Start</button>
+        <button id="stop-btn" class="btn btn-secondary btn-sm hidden" onclick="stopCurrentMode()">⏹ Stop</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearFeed()">Clear Feed</button>
       </div>
     </header>
     <div class="page-container">
+
+      <!-- Mode selection toggle -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="mode-tab-group">
+          <button class="mode-tab active" id="tab-live" onclick="setMode('live')">🌐 Live Network Capture</button>
+          <button class="mode-tab" id="tab-sim" onclick="setMode('sim')">⚡ Traffic Simulation</button>
+        </div>
+        <div id="mode-badge" style="font-size:12px;color:var(--text-muted)">Mode: <strong>Live Network</strong></div>
+      </div>
+
+      <!-- Capability warning if Npcap missing -->
+      <div id="driver-alert" class="hidden"></div>
+
       <!-- Session counters -->
-      <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
-        <div class="stat-card teal"><div class="stat-label">Total Analyzed</div><div class="stat-value" id="s-total">0</div></div>
-        <div class="stat-card green"><div class="stat-label">Normal</div><div class="stat-value" id="s-normal">0</div></div>
+      <div class="stat-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:20px">
+        <div class="stat-card teal"><div class="stat-label" id="lbl-pkts">Packets Captured</div><div class="stat-value" id="s-pkts">0</div></div>
+        <div class="stat-card blue"><div class="stat-label" id="lbl-flows">Flows Generated</div><div class="stat-value" id="s-flows">0</div></div>
+        <div class="stat-card purple"><div class="stat-label">Flows Analyzed</div><div class="stat-value" id="s-total">0</div></div>
+        <div class="stat-card green"><div class="stat-label">Normal Traffic</div><div class="stat-value" id="s-normal">0</div></div>
         <div class="stat-card red"><div class="stat-label">Intrusions</div><div class="stat-value" id="s-intrusions">0</div></div>
         <div class="stat-card orange"><div class="stat-label">Alerts Raised</div><div class="stat-value" id="s-alerts">0</div></div>
-        <div class="stat-card purple"><div class="stat-label">Rate (%)</div><div class="stat-value" id="s-rate">0</div></div>
       </div>
 
       <div class="grid-2-1">
-        <!-- Feed -->
+        <!-- Live Detection Feed -->
         <div class="card">
           <div class="card-header">
-            <h3 class="card-title">Live Detection Feed</h3>
-            <div style="display:flex;gap:6px;align-items:center">
+            <h3 class="card-title" id="feed-title">Live Flow Detection Feed</h3>
+            <div style="display:flex;gap:8px;align-items:center">
               <span id="feed-count" style="font-size:12px;color:var(--text-muted)">0 events</span>
               <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);cursor:pointer">
                 <input type="checkbox" id="auto-scroll" checked> Auto-scroll
@@ -46,14 +138,36 @@
           <div class="simulation-feed scrollbar-thin" id="detection-feed">
             <div style="text-align:center;color:var(--text-muted);padding:60px 20px">
               <div style="font-size:40px;margin-bottom:12px;opacity:0.3">📡</div>
-              Click <strong>Start</strong> to begin real-time simulation.
+              Select your network adapter and click <strong>Start</strong> to begin real-time detection.
             </div>
           </div>
         </div>
 
-        <!-- Settings + Alert log -->
+        <!-- Right Column: Settings + Alert Sidebar -->
         <div>
-          <div class="card" style="margin-bottom:16px">
+          <!-- Live Network Settings Panel -->
+          <div class="card" id="panel-live-settings" style="margin-bottom:16px">
+            <div class="card-header">
+              <h3 class="card-title">Network Interface</h3>
+              <button class="btn btn-secondary btn-sm" onclick="loadInterfaces()" title="Refresh Adapters">🔄</button>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Select Adapter</label>
+              <select class="form-select" id="network-interface">
+                <option value="">Loading adapters...</option>
+              </select>
+            </div>
+            <div id="adapter-details" style="font-size:12px;color:var(--text-muted);margin-top:-6px;margin-bottom:12px">
+              IP: <span id="adapter-ip">—</span> | Status: <span id="adapter-status">—</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" style="flex:1" onclick="injectTestFlow(false)">🧪 Test Normal Flow</button>
+              <button class="btn btn-secondary btn-sm" style="flex:1;color:var(--severity-critical)" onclick="injectTestFlow(true)">🚨 Test Attack Flow</button>
+            </div>
+          </div>
+
+          <!-- Simulation Settings Panel -->
+          <div class="card hidden" id="panel-sim-settings" style="margin-bottom:16px">
             <div class="card-header"><h3 class="card-title">Simulation Settings</h3></div>
             <div class="form-group">
               <label class="form-label">Traffic Pattern</label>
@@ -68,14 +182,20 @@
               <input class="form-input" type="number" id="sim-interval" value="1500" min="500" max="5000">
             </div>
           </div>
+
+          <!-- Recent Alerts Card -->
           <div class="card">
-            <div class="card-header"><h3 class="card-title">Recent Alerts</h3></div>
+            <div class="card-header">
+              <h3 class="card-title">Recent Alerts</h3>
+              <span id="alert-badge-count" style="font-size:11px;color:var(--severity-critical);font-weight:600">0</span>
+            </div>
             <div id="alert-sidebar" style="max-height:300px;overflow-y:auto">
               <div style="text-align:center;color:var(--text-muted);font-size:13px;padding:20px">No alerts yet.</div>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </div>
@@ -85,35 +205,308 @@
 <script src="js/utils.js"></script>
 <script src="js/sidebar.js"></script>
 <script>
+let currentMode = 'live'; // 'live' or 'sim'
+let isMonitoring = false;
 let simTimer = null;
-let sessionStats = { total: 0, normal: 0, intrusions: 0, alerts: 0 };
+let livePollTimer = null;
+let lastEventId = 0;
+
+let sessionStats = {
+  packets: 0,
+  flows: 0,
+  total: 0,
+  normal: 0,
+  intrusions: 0,
+  alerts: 0
+};
+
+let cachedInterfaces = [];
+let captureCapability = null;
 const recentAlerts = [];
 
 async function init() {
   const user = await auth.requireAuth();
   if (!user) return;
   renderSidebar();
+
+  await loadInterfaces();
+  checkCurrentCaptureStatus();
 }
 
-function startMonitor() {
+function setMode(mode) {
+  if (isMonitoring) {
+    toast.warning('Running', 'Please stop current monitor before switching modes.');
+    return;
+  }
+  currentMode = mode;
+  document.getElementById('tab-live').classList.toggle('active', mode === 'live');
+  document.getElementById('tab-sim').classList.toggle('active', mode === 'sim');
+  document.getElementById('panel-live-settings').classList.toggle('hidden', mode !== 'live');
+  document.getElementById('panel-sim-settings').classList.toggle('hidden', mode !== 'sim');
+
+  const modeBadge = document.getElementById('mode-badge');
+  const subTitle = document.getElementById('monitor-subtitle');
+  if (mode === 'live') {
+    modeBadge.innerHTML = 'Mode: <strong>Live Network (Physical Adapter)</strong>';
+    subTitle.textContent = 'Live Physical Packet Capture & Real-Time ML Inference';
+    document.getElementById('lbl-pkts').textContent = 'Packets Captured';
+    document.getElementById('lbl-flows').textContent = 'Flows Generated';
+  } else {
+    modeBadge.innerHTML = 'Mode: <strong>Traffic Simulation</strong>';
+    subTitle.textContent = 'Simulated Traffic Generation';
+    document.getElementById('lbl-pkts').textContent = 'Sim Cycles';
+    document.getElementById('lbl-flows').textContent = 'Synthetic Flows';
+  }
+}
+
+async function loadInterfaces() {
+  const select = document.getElementById('network-interface');
+  select.innerHTML = '<option value="">Checking adapters...</option>';
+  try {
+    const res = await api.network.interfaces();
+    if (res.success && res.data) {
+      cachedInterfaces = res.data.interfaces || [];
+      captureCapability = res.data.capability || {};
+
+      renderCapabilityAlert(captureCapability);
+
+      select.innerHTML = '';
+      if (cachedInterfaces.length === 0) {
+        select.innerHTML = '<option value="">No adapters detected</option>';
+      } else {
+        cachedInterfaces.forEach(i => {
+          const opt = document.createElement('option');
+          opt.value = i.name;
+          const statusTxt = i.is_up ? '🟢 UP' : '⚪ DOWN';
+          opt.textContent = `${i.name} — ${i.ip !== 'N/A' ? i.ip : 'No IP'} (${statusTxt})`;
+          select.appendChild(opt);
+        });
+      }
+      updateSelectedInterfaceDetails();
+    }
+  } catch (err) {
+    select.innerHTML = '<option value="">Error loading adapters</option>';
+  }
+}
+
+function renderCapabilityAlert(cap) {
+  const alertEl = document.getElementById('driver-alert');
+  if (!cap || cap.available) {
+    alertEl.className = 'banner-success';
+    alertEl.innerHTML = `<span>🛡️ Packet Capture Driver: <strong>Ready (${cap ? cap.driver : 'Npcap'})</strong></span>`;
+    alertEl.classList.remove('hidden');
+    return;
+  }
+
+  alertEl.className = 'banner-warning';
+  alertEl.innerHTML = `
+    <strong>⚠️ Npcap Driver Required for Live Sniffing:</strong> ${cap.message}<br>
+    To sniff live packets on Windows, please <a href="https://npcap.com" target="_blank">Download & Install Npcap</a> (or run your terminal as Administrator).<br>
+    <em>In the meantime, you can test the pipeline using <strong>Test Flow buttons</strong> below or switch to <strong>Traffic Simulation</strong> mode anytime!</em>
+  `;
+  alertEl.classList.remove('hidden');
+}
+
+document.getElementById('network-interface').addEventListener('change', updateSelectedInterfaceDetails);
+
+function updateSelectedInterfaceDetails() {
+  const selVal = document.getElementById('network-interface').value;
+  const match = cachedInterfaces.find(i => i.name === selVal);
+  if (match) {
+    document.getElementById('adapter-ip').textContent = match.ip;
+    document.getElementById('adapter-status').innerHTML = match.is_up
+      ? '<span style="color:var(--accent-green)">UP</span>'
+      : '<span style="color:var(--text-muted)">DOWN</span>';
+  } else {
+    document.getElementById('adapter-ip').textContent = '—';
+    document.getElementById('adapter-status').textContent = '—';
+  }
+}
+
+async function checkCurrentCaptureStatus() {
+  try {
+    const res = await api.network.captureStatus();
+    if (res.success && res.data) {
+      if (res.data.state === 'CAPTURING') {
+        currentMode = 'live';
+        setMode('live');
+        onCaptureStarted(res.data.interface);
+      }
+    }
+  } catch (e) {}
+}
+
+function startCurrentMode() {
+  if (currentMode === 'live') {
+    startLiveCapture();
+  } else {
+    startSimulation();
+  }
+}
+
+function stopCurrentMode() {
+  if (currentMode === 'live') {
+    stopLiveCapture();
+  } else {
+    stopSimulation();
+  }
+}
+
+/* ── Live Network Capture ────────────────────────────────────────── */
+async function startLiveCapture() {
+  const iface = document.getElementById('network-interface').value;
+  if (!iface) {
+    toast.error('Interface Required', 'Please select a network interface first.');
+    return;
+  }
+
+  document.getElementById('start-btn').disabled = true;
+  const res = await api.network.startCapture(iface);
+  document.getElementById('start-btn').disabled = false;
+
+  if (!res.success) {
+    toast.error('Cannot Start Capture', res.message);
+    if (res.error && res.error.install_guide) {
+      toast.warning('Npcap Setup', res.error.install_guide, 8000);
+    }
+    return;
+  }
+
+  onCaptureStarted(iface);
+  toast.success('Capture Started', `Sniffing packets on ${iface}`);
+}
+
+function onCaptureStarted(iface) {
+  isMonitoring = true;
+  document.getElementById('start-btn').classList.add('hidden');
+  document.getElementById('stop-btn').classList.remove('hidden');
+  document.getElementById('monitor-status-dot').style.background = '#10b981';
+  document.getElementById('monitor-status-dot').style.boxShadow = '0 0 10px #10b981';
+  document.getElementById('monitor-status-text').textContent = `Capturing (${iface})`;
+
+  const emptyMsg = document.getElementById('detection-feed').querySelector('div');
+  if (emptyMsg && emptyMsg.style.textAlign === 'center') {
+    document.getElementById('detection-feed').innerHTML = '';
+  }
+
+  // Start polling events and status
+  livePollTimer = setInterval(pollLiveEvents, 1000);
+  pollLiveEvents();
+}
+
+async function stopLiveCapture() {
+  document.getElementById('stop-btn').disabled = true;
+  const res = await api.network.stopCapture();
+  document.getElementById('stop-btn').disabled = false;
+
+  clearInterval(livePollTimer);
+  livePollTimer = null;
+  isMonitoring = false;
+
+  document.getElementById('start-btn').classList.remove('hidden');
+  document.getElementById('stop-btn').classList.add('hidden');
+  document.getElementById('monitor-status-dot').style.background = 'var(--text-muted)';
+  document.getElementById('monitor-status-dot').style.boxShadow = 'none';
+  document.getElementById('monitor-status-text').textContent = 'Stopped';
+
+  toast.info('Capture Stopped', 'Packet capture terminated cleanly.');
+}
+
+async function pollLiveEvents() {
+  try {
+    const res = await api.network.events(30, lastEventId);
+    if (res.success && res.data) {
+      const { events, status } = res.data;
+
+      // Update counters from live backend stats
+      if (status && status.stats) {
+        sessionStats.packets = status.stats.packets_captured || 0;
+        sessionStats.flows = status.stats.flows_generated || 0;
+        sessionStats.total = status.stats.flows_analyzed || 0;
+        sessionStats.normal = status.stats.normal_traffic || 0;
+        sessionStats.intrusions = status.stats.intrusions || 0;
+        sessionStats.alerts = status.stats.alerts || 0;
+        updateStats();
+      }
+
+      if (events && events.length > 0) {
+        events.forEach(evt => {
+          lastEventId = Math.max(lastEventId, evt.id);
+          addFeedItem(evt, evt.source_ip, evt.destination_ip, evt.destination_port, 'LIVE');
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error polling live events:', err);
+  }
+}
+
+async function injectTestFlow(attack) {
+  const iface = document.getElementById('network-interface').value;
+  const selObj = cachedInterfaces.find(i => i.name === iface);
+  const myIp = selObj && selObj.ip !== 'N/A' ? selObj.ip : '192.168.31.27';
+
+  const res = await api.network.injectTestFlow({
+    source_ip: attack ? '192.168.1.189' : myIp,
+    destination_ip: attack ? myIp : '1.1.1.1',
+    source_port: Math.floor(Math.random() * 40000) + 1024,
+    destination_port: attack ? 22 : 443,
+    protocol: 'TCP',
+    attack_simulation: attack,
+  });
+
+  if (res.success && res.data) {
+    toast.success('Test Flow Injected', `${res.data.prediction} (${res.data.severity})`);
+    addFeedItem(res.data, res.data.source_ip, res.data.destination_ip, res.data.destination_port, 'LIVE');
+    try {
+      const st = await api.network.captureStatus();
+      if (st.success && st.data && st.data.stats) {
+        sessionStats.packets = st.data.stats.packets_captured || 0;
+        sessionStats.flows = st.data.stats.flows_generated || 0;
+        sessionStats.total = st.data.stats.flows_analyzed || 0;
+        sessionStats.normal = st.data.stats.normal_traffic || 0;
+        sessionStats.intrusions = st.data.stats.intrusions || 0;
+        sessionStats.alerts = st.data.stats.alerts || 0;
+        updateStats();
+      }
+    } catch (e) {
+      sessionStats.flows++;
+      sessionStats.total++;
+      if (res.data.is_intrusion) {
+        sessionStats.intrusions++;
+      } else {
+        sessionStats.normal++;
+      }
+      updateStats();
+    }
+  } else {
+    toast.error('Test Injection Failed', res.message);
+  }
+}
+
+/* ── Simulation Mode ─────────────────────────────────────────────── */
+function startSimulation() {
+  isMonitoring = true;
   const interval = parseInt(document.getElementById('sim-interval').value) || 1500;
   document.getElementById('start-btn').classList.add('hidden');
   document.getElementById('stop-btn').classList.remove('hidden');
-  document.getElementById('monitor-status-dot').style.cssText = '';
-  document.getElementById('monitor-status-text').textContent = 'Monitoring...';
+  document.getElementById('monitor-status-dot').style.background = '#3b82f6';
+  document.getElementById('monitor-status-dot').style.boxShadow = '0 0 10px #3b82f6';
+  document.getElementById('monitor-status-text').textContent = 'Simulating...';
 
-  const firstLine = document.getElementById('detection-feed').querySelector('div');
-  if (firstLine && firstLine.style.textAlign === 'center') {
+  const emptyMsg = document.getElementById('detection-feed').querySelector('div');
+  if (emptyMsg && emptyMsg.style.textAlign === 'center') {
     document.getElementById('detection-feed').innerHTML = '';
   }
 
   simTimer = setInterval(simulateOne, interval);
-  simulateOne(); // Immediate first call
+  simulateOne();
 }
 
-function stopMonitor() {
+function stopSimulation() {
   clearInterval(simTimer);
   simTimer = null;
+  isMonitoring = false;
   document.getElementById('start-btn').classList.remove('hidden');
   document.getElementById('stop-btn').classList.add('hidden');
   document.getElementById('monitor-status-dot').style.background = 'var(--text-muted)';
@@ -121,18 +514,10 @@ function stopMonitor() {
   document.getElementById('monitor-status-text').textContent = 'Stopped';
 }
 
-function clearFeed() {
-  stopMonitor();
-  document.getElementById('detection-feed').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px 20px"><div style="font-size:40px;margin-bottom:12px;opacity:0.3">📡</div>Click <strong>Start</strong> to begin real-time simulation.</div>';
-  sessionStats = { total: 0, normal: 0, intrusions: 0, alerts: 0 };
-  updateStats();
-}
-
 async function simulateOne() {
   const pattern = document.getElementById('traffic-pattern').value;
   const features = generateSampleFeatures(pattern);
 
-  // Simulate realistic IP addresses
   const srcIp = randomIp();
   const dstIp = randomIp();
   const dstPort = [80, 443, 22, 21, 53, 8080, 3389][Math.floor(Math.random()*7)];
@@ -146,68 +531,102 @@ async function simulateOne() {
     protocol: ['TCP','UDP','ICMP'][Math.floor(Math.random()*3)],
   });
 
-  if (!resp.success) return; // Backend error, skip
+  if (!resp.success) return;
 
   const r = resp.data;
+  sessionStats.packets++;
+  sessionStats.flows++;
   sessionStats.total++;
-  if (r.is_intrusion) { sessionStats.intrusions++; if (r.severity === 'CRITICAL' || r.severity === 'HIGH') sessionStats.alerts++; }
-  else sessionStats.normal++;
+  if (r.is_intrusion) {
+    sessionStats.intrusions++;
+    if (r.severity === 'CRITICAL' || r.severity === 'HIGH') sessionStats.alerts++;
+  } else {
+    sessionStats.normal++;
+  }
   updateStats();
-  addFeedItem(r, srcIp, dstIp, dstPort);
+  addFeedItem(r, srcIp, dstIp, dstPort, 'SIMULATED');
 }
 
-function addFeedItem(r, srcIp, dstIp, dstPort) {
+/* ── Feed Display & Utilities ────────────────────────────────────── */
+function addFeedItem(r, srcIp, dstIp, dstPort, modeTag) {
   const feed = document.getElementById('detection-feed');
   const item = document.createElement('div');
   item.className = `feed-item ${r.is_intrusion ? 'intrusion' : 'normal'}`;
+  if (r.validation_note) {
+    item.setAttribute('title', r.validation_note);
+  }
+
+  const isLive = modeTag === 'LIVE' || r.mode === 'LIVE';
+  const tagHtml = isLive
+    ? '<span class="badge-live">LIVE</span>'
+    : '<span class="badge-sim">SIMULATED</span>';
+
   item.innerHTML = `
-    <span class="feed-time">${new Date().toLocaleTimeString()}</span>
-    <span style="font-size:16px">${r.is_intrusion ? '🚨' : '✅'}</span>
-    <span class="feed-ip">${srcIp} → ${dstIp}:${dstPort}</span>
+    <span class="feed-time">${r.time || new Date().toLocaleTimeString()}</span>
+    ${tagHtml}
+    <span style="font-size:15px">${r.is_intrusion ? '🚨' : '✅'}</span>
+    <span class="feed-ip" ${r.validation_note ? `title="${escHtml(r.validation_note)}"` : ''}>${srcIp} → ${dstIp}:${dstPort || ''}</span>
     <span class="feed-type">${fmt.prediction(r.prediction)}</span>
     <span>${fmt.severity(r.severity)}</span>
     <span class="mono" style="font-size:11px;color:var(--text-muted)">${fmt.confidence(r.confidence)}</span>
   `;
+
   feed.insertBefore(item, feed.firstChild);
 
-  // Update feed count
   const count = feed.children.length;
   document.getElementById('feed-count').textContent = `${count} events`;
+  if (count > 250) feed.removeChild(feed.lastChild);
 
-  // Limit to 200 items
-  if (count > 200) feed.removeChild(feed.lastChild);
-
-  // Alert sidebar
   if (r.is_intrusion) {
-    recentAlerts.unshift({ ...r, src: srcIp, dst: dstIp, time: new Date() });
-    if (recentAlerts.length > 20) recentAlerts.pop();
+    recentAlerts.unshift({
+      prediction: r.prediction,
+      severity: r.severity,
+      src: srcIp,
+      dst: dstIp,
+      time: new Date(),
+      isLive: isLive
+    });
+    if (recentAlerts.length > 25) recentAlerts.pop();
     renderAlertSidebar();
-    if (r.severity === 'CRITICAL') toast.error('CRITICAL', `${r.prediction} from ${srcIp}`, 6000);
-    else if (r.severity === 'HIGH') toast.warning('HIGH Severity', `${r.prediction} from ${srcIp}`, 4000);
+    if (r.severity === 'CRITICAL') toast.error('CRITICAL Intrusion', `${r.prediction} from ${srcIp}`, 5000);
+    else if (r.severity === 'HIGH') toast.warning('HIGH Severity Alert', `${r.prediction} from ${srcIp}`, 3500);
   }
 }
 
 function renderAlertSidebar() {
   const el = document.getElementById('alert-sidebar');
+  document.getElementById('alert-badge-count').textContent = recentAlerts.length;
+
   el.innerHTML = recentAlerts.map(a => `
-    <div style="padding:8px;border-bottom:1px solid var(--border-color);font-size:12px">
-      <div style="display:flex;justify-content:space-between">
+    <div style="padding:10px 8px;border-bottom:1px solid var(--border-color);font-size:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:600;color:var(--severity-critical)">${escHtml(a.prediction)}</span>
         ${fmt.severity(a.severity)}
       </div>
-      <div style="color:var(--text-muted);margin-top:2px">${a.src} → ${a.dst}</div>
-      <div style="color:var(--text-muted)">${a.time.toLocaleTimeString()}</div>
+      <div style="color:var(--text-muted);margin-top:2px;font-family:var(--font-mono)">${a.src} → ${a.dst}</div>
+      <div style="display:flex;justify-content:space-between;color:var(--text-muted);margin-top:2px">
+        <span>${a.time.toLocaleTimeString()}</span>
+        <span style="font-size:10px">${a.isLive ? 'LIVE' : 'SIM'}</span>
+      </div>
     </div>
   `).join('');
 }
 
 function updateStats() {
+  document.getElementById('s-pkts').textContent = fmt.number(sessionStats.packets);
+  document.getElementById('s-flows').textContent = fmt.number(sessionStats.flows);
   document.getElementById('s-total').textContent = fmt.number(sessionStats.total);
   document.getElementById('s-normal').textContent = fmt.number(sessionStats.normal);
   document.getElementById('s-intrusions').textContent = fmt.number(sessionStats.intrusions);
   document.getElementById('s-alerts').textContent = fmt.number(sessionStats.alerts);
-  const rate = sessionStats.total > 0 ? ((sessionStats.intrusions/sessionStats.total)*100).toFixed(1) : 0;
-  document.getElementById('s-rate').textContent = rate;
+}
+
+function clearFeed() {
+  if (isMonitoring) stopCurrentMode();
+  document.getElementById('detection-feed').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px 20px"><div style="font-size:40px;margin-bottom:12px;opacity:0.3">📡</div>Click <strong>Start</strong> to begin real-time detection.</div>';
+  document.getElementById('feed-count').textContent = '0 events';
+  sessionStats = { packets: 0, flows: 0, total: 0, normal: 0, intrusions: 0, alerts: 0 };
+  updateStats();
 }
 
 function generateSampleFeatures(pattern) {
@@ -221,47 +640,88 @@ function generateSampleFeatures(pattern) {
     'Fwd Packet Length Min': Math.random() * 64 + 20,
     'Fwd Packet Length Mean': Math.random() * 600 + 50,
     'Fwd Packet Length Std': Math.random() * 200,
+    'Bwd Packet Length Max': Math.random() * 1500,
+    'Bwd Packet Length Min': Math.random() * 40,
     'Bwd Packet Length Mean': Math.random() * 500 + 50,
+    'Bwd Packet Length Std': Math.random() * 180,
     'Flow Bytes/s': Math.random() * 100000,
     'Flow Packets/s': Math.random() * 500,
     'Flow IAT Mean': Math.random() * 10000,
+    'Flow IAT Std': Math.random() * 5000,
     'Flow IAT Max': Math.random() * 50000,
+    'Flow IAT Min': Math.random() * 100,
+    'Fwd IAT Total': Math.random() * 80000,
     'Fwd IAT Mean': Math.random() * 8000,
+    'Fwd IAT Std': Math.random() * 4000,
+    'Fwd IAT Max': Math.random() * 40000,
+    'Fwd IAT Min': Math.random() * 100,
+    'Bwd IAT Total': Math.random() * 70000,
     'Bwd IAT Mean': Math.random() * 7000,
-    'SYN Flag Count': Math.floor(Math.random() * 5),
-    'ACK Flag Count': Math.floor(Math.random() * 20),
-    'FIN Flag Count': Math.floor(Math.random() * 3),
-    'RST Flag Count': Math.floor(Math.random() * 2),
-    'PSH Flag Count': Math.floor(Math.random() * 5),
+    'Bwd IAT Std': Math.random() * 3500,
+    'Bwd IAT Max': Math.random() * 35000,
+    'Bwd IAT Min': Math.random() * 100,
+    'Fwd PSH Flags': 0,
+    'Bwd PSH Flags': 0,
+    'Fwd URG Flags': 0,
+    'Bwd URG Flags': 0,
+    'Fwd Header Length': 40,
+    'Bwd Header Length': 40,
+    'Fwd Packets/s': Math.random() * 250,
+    'Bwd Packets/s': Math.random() * 250,
+    'Min Packet Length': 40,
+    'Max Packet Length': 1500,
+    'Packet Length Mean': 400,
+    'Packet Length Std': 200,
+    'Packet Length Variance': 40000,
+    'FIN Flag Count': Math.floor(Math.random() * 2),
+    'SYN Flag Count': Math.floor(Math.random() * 3),
+    'RST Flag Count': 0,
+    'PSH Flag Count': Math.floor(Math.random() * 4),
+    'ACK Flag Count': Math.floor(Math.random() * 15),
     'URG Flag Count': 0,
-    'Average Packet Size': Math.random() * 700 + 40,
-    'Init_Win_bytes_forward': [65535, 32768, 8192, 1024, 0][Math.floor(Math.random()*5)],
-    'Init_Win_bytes_backward': [65535, 32768, 8192, 1024][Math.floor(Math.random()*4)],
+    'CWE Flag Count': 0,
+    'ECE Flag Count': 0,
+    'Down/Up Ratio': 0.8,
+    'Average Packet Size': 420,
+    'Avg Fwd Segment Size': 400,
+    'Avg Bwd Segment Size': 450,
+    'Fwd Avg Bytes/Bulk': 0,
+    'Fwd Avg Packets/Bulk': 0,
+    'Fwd Avg Bulk Rate': 0,
+    'Bwd Avg Bytes/Bulk': 0,
+    'Bwd Avg Packets/Bulk': 0,
+    'Bwd Avg Bulk Rate': 0,
+    'Subflow Fwd Packets': 10,
+    'Subflow Fwd Bytes': 4000,
+    'Subflow Bwd Packets': 8,
+    'Subflow Bwd Bytes': 3600,
+    'Init_Win_bytes_forward': 65535,
+    'Init_Win_bytes_backward': 65535,
+    'act_data_pkt_fwd': 5,
     'min_seg_size_forward': 20,
-    'act_data_pkt_fwd': Math.floor(Math.random() * 10),
+    'Active Mean': 50000,
+    'Active Std': 0,
+    'Active Max': 50000,
+    'Active Min': 50000,
+    'Idle Mean': 0,
+    'Idle Std': 0,
+    'Idle Max': 0,
+    'Idle Min': 0,
   };
 
   if (pattern === 'attack_heavy' && Math.random() < 0.6) {
-    // Inject attack-like pattern
     base['SYN Flag Count'] = Math.floor(Math.random() * 200) + 50;
     base['Flow Duration'] = Math.random() * 2000;
     base['Total Fwd Packets'] = Math.floor(Math.random() * 1000) + 100;
     base['Flow Bytes/s'] = Math.random() * 5000000;
-    base['Fwd Packet Length Mean'] = Math.random() * 40 + 5;
-    base['Init_Win_bytes_forward'] = Math.floor(Math.random() * 4);
-  } else if (pattern === 'mostly_normal') {
-    // Normal-biased features
-    base['Flow Duration'] = Math.random() * 200000 + 10000;
-    base['SYN Flag Count'] = Math.floor(Math.random() * 2);
-    base['Init_Win_bytes_forward'] = [65535, 32768][Math.floor(Math.random()*2)];
   }
   return base;
 }
 
 function randomIp() {
-  const prefixes = ['192.168.', '10.0.', '172.16.', '45.33.', '104.21.', '8.8.'];
-  const prefix = prefixes[Math.floor(Math.random()*prefixes.length)];
-  return prefix + Math.floor(Math.random()*255) + '.' + Math.floor(Math.random()*254+1);
+  const prefixes = ['192.168.1.', '10.0.0.', '172.16.0.', '45.33.88.', '104.21.56.', '8.8.4.'];
+  const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+  return p + Math.floor(Math.random() * 254 + 1);
 }
 
 init();

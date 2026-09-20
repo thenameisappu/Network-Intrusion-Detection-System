@@ -14,3 +14,5 @@ matplotlib==3.10.9
 reportlab==4.5.1
 pytest==8.4.1
 pytest-flask==1.3.0
+scapy>=2.5.0
+psutil>=5.9.0

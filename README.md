@@ -50,9 +50,12 @@ The system is built with a clean layered architecture (Frontend → REST API →
 ## Features
 
 ### Security & Detection
+- **Live Network Traffic Capture** — sniffs packets in real time from physical or virtual network adapters (Wi-Fi, Ethernet) using Scapy and Npcap.
+- **5-Tuple Flow Aggregator** — groups bidirectional packets into flows `(src_ip, dst_ip, src_port, dst_port, protocol)` with active/idle timeout sweeps and TCP FIN/RST termination.
+- **77-Feature Extraction Engine** — computes all 77 canonical CIC-IDS2017 flow metrics directly from live packets for the active ML pipeline.
+- **Dual-Mode Real-Time Monitor** — seamless switching between **Live Network Capture** (`[LIVE]`) and **Traffic Simulation** (`[SIMULATED]`).
 - **Single-flow prediction** — enter network features manually and get an instant ML prediction
 - **Batch CSV detection** — upload a CIC-IDS2017 format CSV and classify thousands of records at once
-- **Real-time simulation** — live traffic feed calling the prediction API continuously (configurable rate)
 - **10 attack categories** detected: DoS, DDoS, PortScan, FTP-Patator, SSH-Patator, Slowloris, Slowhttptest, GoldenEye, Bot, and Infiltration
 - **4-level severity classification**: CRITICAL, HIGH, MEDIUM, LOW
 - **Automatic alert creation** for every intrusion detection above the confidence threshold
@@ -256,6 +259,7 @@ Network Intrusion Detection System/
 - **Python 3.10 or higher**
 - **pip** (Python package manager)
 - **MongoDB** *(optional — system falls back to TinyDB automatically)*
+- **Npcap for Windows** *(optional — required for live packet capture on physical network interfaces; download from [npcap.com](https://npcap.com) with "Install Npcap in WinPcap API-compatible Mode" enabled)*
 
 ### Installation
 
@@ -340,12 +344,29 @@ frontend/index.html
 3. Click **Run Batch Detection**
 4. View the summary (total, intrusions, normal, detection rate) and breakdown by attack type
 
-#### Real-Time Simulation
+#### Real-Time Network Monitor (Dual Mode)
+
+The Real-Time Monitor supports two distinct operational modes:
+
+##### 1. Live Network Capture Mode
 1. Go to **Real-Time Monitor**
-2. Select a **Traffic Pattern** (Mixed / Attack Heavy / Mostly Normal)
-3. Click **▶ Start**
-4. Watch the live feed — each entry calls the real prediction API
-5. Critical intrusions trigger toast notifications in real-time
+2. Ensure the **Live Network Capture** tab is selected
+3. Select your active physical or virtual network adapter (e.g. `Wi-Fi` or `Ethernet`)
+4. Verify the packet capture driver status:
+   - If **Npcap** is installed, live packet sniffing is active.
+   - If Npcap is missing, the system displays a clear warning with setup instructions. You can install Npcap from [npcap.com](https://npcap.com) (check *"Install Npcap in WinPcap API-compatible Mode"*).
+5. Click **▶ Start** to begin live packet capture
+6. The backend sniffs real packets, aggregates them into bidirectional 5-tuple flows, extracts all 77 CIC-IDS2017 features, and classifies them in real time with the active ML model
+7. Live detections appear with the `[LIVE]` tag and automatically update the main Dashboard, active alerts, and detection history
+8. Use **Test Normal Flow** and **Test Attack Flow** buttons to verify the entire pipeline on demand
+9. Click **⏹ Stop** to safely flush remaining flows and stop packet sniffing
+
+##### 2. Traffic Simulation Mode
+1. Click the **Traffic Simulation** tab
+2. Select a **Traffic Pattern** (`Mixed (Realistic)`, `Attack Heavy`, or `Mostly Normal`)
+3. Adjust the interval (ms)
+4. Click **▶ Start**
+5. Simulated traffic events appear in the live feed clearly labeled with the `[SIMULATED]` tag without corrupting or misrepresenting real network data
 
 #### Managing Alerts
 1. Go to **Alerts**
@@ -445,6 +466,17 @@ Authentication uses `Authorization: Bearer <JWT_TOKEN>` header.
 |--------|----------|-------------|
 | `GET` | `/reports/preview` | Report data preview |
 | `POST` | `/reports/generate` | Download report (`format`: json/csv/pdf) |
+
+### Network & Live Capture
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/network/interfaces` | List physical/virtual adapters & Npcap capability |
+| `POST` | `/network/capture/start` | Start live sniffing on selected interface |
+| `POST` | `/network/capture/stop` | Stop packet capture & flush active flows |
+| `GET` | `/network/capture/status` | Real-time state, session counters, uptime |
+| `GET` | `/network/capture/events` | Poll classified flow events (`?limit=50&since=0`) |
+| `GET` | `/network/capture/stream` | Server-Sent Events (SSE) live detection stream |
+| `POST` | `/network/capture/inject-test-flow` | Pipeline validation with synthetic test flow |
 
 ### Admin
 | Method | Endpoint | Description |

@@ -64,6 +64,7 @@ def create_app(config=None) -> Flask:
     from backend.analytics.routes import analytics_bp
     from backend.reports.routes import reports_bp
     from backend.admin.routes import admin_bp
+    from backend.network.routes import network_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -74,6 +75,8 @@ def create_app(config=None) -> Flask:
     app.register_blueprint(analytics_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(network_bp)
+    app.register_blueprint(network_bp, name="api_network", url_prefix="/api/network")
 
     # Health check
     @app.route("/health")
@@ -108,4 +111,4 @@ def create_app(config=None) -> Flask:
 
 if __name__ == "__main__":
     application = create_app()
-    application.run(host="0.0.0.0", port=5000, debug=True)
+    application.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
