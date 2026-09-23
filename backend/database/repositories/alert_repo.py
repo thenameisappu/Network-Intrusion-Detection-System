@@ -1,4 +1,5 @@
 """Alert repository — manages security alert lifecycle."""
+from datetime import datetime
 from backend.database.connection import get_db
 from backend.database.repositories.base import _serialize, _now, id_query
 from backend.utils.logger import get_logger
@@ -39,10 +40,8 @@ class AlertRepository:
 
         if existing:
             doc = existing[0]
-            # Check time window
-            now_iso = _now()
-            # If recent, increment occurrences
             doc_id = str(doc.get("_id"))
+            now_iso = _now()
             occ = doc.get("occurrences", 1) + 1
             self._col.update_one(
                 id_query(doc_id),
@@ -84,9 +83,7 @@ class AlertRepository:
     def update_status(self, alert_id: str, status: str, extra: dict = None) -> bool:
         update = {"status": status, "updated_at": _now()}
         if extra:
-            # Serialize any datetime values in extra
             for k, v in extra.items():
-                from datetime import datetime
                 if isinstance(v, datetime):
                     extra[k] = v.isoformat()
             update.update(extra)

@@ -3,18 +3,9 @@ Attack label normalization taxonomy.
 Maps raw CIC-IDS2017 labels (and variants) to normalized categories.
 Unknown labels are reported — never silently misclassified.
 """
+import logging
 
-# Normalized categories
-CATEGORIES = [
-    "BENIGN",
-    "DoS",
-    "DDoS",
-    "PortScan",
-    "Brute Force",
-    "Bot",
-    "Web Attack",
-    "Infiltration",
-]
+logger = logging.getLogger(__name__)
 
 # Raw label → normalized category
 LABEL_MAP = {
@@ -78,15 +69,9 @@ def normalize_label(raw_label: str) -> tuple:
 
 def normalize_labels_series(series):
     """Apply normalize_label to a pandas Series. Returns normalized Series."""
-    import pandas as pd
     result = series.apply(lambda x: normalize_label(x)[0])
     unknown_mask = result == "Unknown"
     if unknown_mask.any():
         unknowns = series[unknown_mask].unique().tolist()
-        print(f"[WARN] Unknown labels found: {unknowns}")
+        logger.warning(f"Unknown labels found in dataset: {unknowns}")
     return result
-
-
-def get_binary_label(normalized: str) -> int:
-    """Return 0 for BENIGN, 1 for any attack."""
-    return 0 if normalized == "BENIGN" else 1

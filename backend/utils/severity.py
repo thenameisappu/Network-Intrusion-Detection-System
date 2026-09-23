@@ -42,7 +42,3 @@ def assign_severity(attack_type: str, confidence: float = 1.0) -> str:
         return "LOW"
 
     return base
-
-
-def get_severity_order() -> list:
-    return ["LOW", "MEDIUM", "HIGH", "CRITICAL"]

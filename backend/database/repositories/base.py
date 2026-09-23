@@ -25,15 +25,6 @@ def _now() -> str:
     return now
 
 
-def _make_id():
-    """Generate a new ID appropriate for the active database backend."""
-    if is_using_tinydb():
-        import uuid
-        return str(uuid.uuid4())
-    from bson import ObjectId
-    return ObjectId()
-
-
 def _serialize(doc) -> dict:
     """Convert a database document to a plain dict with 'id' key."""
     if doc is None:
@@ -47,11 +38,6 @@ def _serialize(doc) -> dict:
         if isinstance(v, datetime):
             doc[k] = v.isoformat()
     return doc
-
-
-def build_query(field: str, value):
-    """Return a simple equality query."""
-    return {field: value}
 
 
 def id_query(user_id: str) -> dict:

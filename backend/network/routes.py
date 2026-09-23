@@ -45,7 +45,7 @@ def start_capture():
             message=result["message"],
             code=result.get("code", "CAPTURE_START_FAILED"),
             status_code=400,
-            extra={"install_guide": result.get("install_guide")} if "install_guide" in result else None
+            details={"install_guide": result.get("install_guide")} if "install_guide" in result else None
         )
 
     return success_response(result["message"], data=service.get_status())

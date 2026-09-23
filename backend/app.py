@@ -76,7 +76,6 @@ def create_app(config=None) -> Flask:
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(network_bp)
-    app.register_blueprint(network_bp, name="api_network", url_prefix="/api/network")
 
     # Health check
     @app.route("/health")

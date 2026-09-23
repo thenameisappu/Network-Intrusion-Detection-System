@@ -21,9 +21,6 @@ import pandas as pd
 ml_bp = Blueprint("ml", __name__)
 logger = get_logger(__name__)
 
-# Background training state
-_training_status = {}
-
 
 # ── Model management ───────────────────────────────────────────────────────────
 
